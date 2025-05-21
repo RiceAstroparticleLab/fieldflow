@@ -1,7 +1,7 @@
 """Configuration classes for FieldFlow models and training.
 
 This module provides configuration dataclasses that encapsulate the parameters
-for model architecture and training workflows for normalizing flow models.
+for model architecture and training workflows.
 """
 
 import sys
@@ -98,6 +98,20 @@ class TrainingConfig:
 
 
 @dataclass
+class ExperimentConfig:
+    """Configuration for experimental parameters.
+
+    This class encapsulates parameters that describe the physical
+    experimental setup and constraints.
+
+    Attributes:
+        tpc_height: Height of the TPC for filtering z coordinates.
+    """
+
+    tpc_height: float = 148.6515
+
+
+@dataclass
 class Config:
     """Main configuration class for FieldFlow.
 
@@ -107,12 +121,14 @@ class Config:
     Attributes:
         model: Model architecture configuration.
         training: Training process configuration.
+        experiment: Experimental setup configuration.
         experiment_name: Optional name for the experiment.
         description: Optional description of the experiment.
     """
 
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
     experiment_name: str | None = None
     description: str | None = None
 
@@ -132,18 +148,20 @@ class Config:
         # Handle nested configs
         model_dict = config_dict.get("model", {})
         training_dict = config_dict.get("training", {})
+        experiment_dict = config_dict.get("experiment", {})
 
         # Get remaining kwargs excluding nested configs
         remaining_kwargs = {
             k: v
             for k, v in config_dict.items()
-            if k not in ("model", "training")
+            if k not in ("model", "training", "experiment")
         }
 
         # Create the config with nested objects
         return cls(
             model=ModelConfig(**model_dict),
             training=TrainingConfig(**training_dict),
+            experiment=ExperimentConfig(**experiment_dict),
             **remaining_kwargs,
         )
 
