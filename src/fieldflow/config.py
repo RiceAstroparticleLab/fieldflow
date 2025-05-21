@@ -4,8 +4,16 @@ This module provides configuration dataclasses that encapsulate the parameters
 for model architecture and training workflows for normalizing flow models.
 """
 
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
+
+# Import the appropriate TOML parser based on Python version
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 
 @dataclass
@@ -49,18 +57,6 @@ class ModelConfig:
     extract_t1: float = 10.0
     dt0: float = 1.0
 
-    @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "ModelConfig":
-        """Create a ModelConfig instance from a dictionary.
-
-        Args:
-            config_dict: Dictionary containing configuration parameters.
-
-        Returns:
-            A ModelConfig instance with the specified parameters.
-        """
-        return cls(**config_dict)
-
 
 @dataclass
 class TrainingConfig:
@@ -100,14 +96,86 @@ class TrainingConfig:
     curl_loss_multiplier: float = 1000.0
     z_scale: float = 5.0
 
+
+@dataclass
+class Config:
+    """Main configuration class for FieldFlow.
+
+    This top-level configuration class combines all configuration components,
+    providing a unified interface for configuring the entire system.
+
+    Attributes:
+        model: Model architecture configuration.
+        training: Training process configuration.
+        experiment_name: Optional name for the experiment.
+        description: Optional description of the experiment.
+    """
+
+    model: ModelConfig = field(default_factory=ModelConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    experiment_name: str | None = None
+    description: str | None = None
+
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "TrainingConfig":
-        """Create a TrainingConfig instance from a dictionary.
+    def from_dict(cls, config_dict: dict[str, Any]) -> "Config":
+        """Create a Config instance from a dictionary.
+
+        This method handles nested configuration dictionaries by automatically
+        converting them to the appropriate dataclass types.
 
         Args:
             config_dict: Dictionary containing configuration parameters.
 
         Returns:
-            A TrainingConfig instance with the specified parameters.
+            A Config instance with the specified parameters.
         """
-        return cls(**config_dict)
+        # Handle nested configs
+        model_dict = config_dict.get("model", {})
+        training_dict = config_dict.get("training", {})
+
+        # Get remaining kwargs excluding nested configs
+        remaining_kwargs = {
+            k: v
+            for k, v in config_dict.items()
+            if k not in ("model", "training")
+        }
+
+        # Create the config with nested objects
+        return cls(
+            model=ModelConfig(**model_dict),
+            training=TrainingConfig(**training_dict),
+            **remaining_kwargs,
+        )
+
+    @classmethod
+    def from_toml(cls, config_path: str | Path) -> "Config":
+        """Load configuration from a TOML file.
+
+        Args:
+            config_path: Path to the TOML configuration file.
+
+        Returns:
+            A Config instance with parameters loaded from the TOML file.
+        """
+        config_path = Path(config_path)
+        if not config_path.exists():
+            raise FileNotFoundError("Config file not found")
+
+        with open(config_path, "rb") as f:
+            config_dict = tomllib.load(f)
+        return cls.from_dict(config_dict)
+
+
+def load_config(config_path: str | Path) -> Config:
+    """Load configuration from a TOML file.
+
+    Args:
+        config_path: Path to configuration file
+
+    Returns:
+        A Config instance with the loaded configuration
+    """
+    with open(Path(config_path), "rb") as f:
+        config_dict = tomllib.load(f)
+
+    return Config.from_dict(config_dict)
