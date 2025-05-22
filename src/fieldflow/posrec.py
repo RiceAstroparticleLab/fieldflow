@@ -72,8 +72,8 @@ def generate_samples_for_cnf(
     conditions: Array,
     n_samples: int,
     posrec_model: eqx.Module,
-    tpc_r: float,
-    radius_buffer: float,
+    tpc_r: float = 66.4,  # Default matches experiment.tpc_r
+    radius_buffer: float = 20.0,  # Default matches posrec.radius_buffer
 ) -> Array:
     """Generate samples from position reconstruction flow for CNF training.
 
@@ -86,8 +86,8 @@ def generate_samples_for_cnf(
         conditions: Conditioning information (hit patterns)
         n_samples: Number of samples to generate
         posrec_model: Pretrained position reconstruction flow model
-        tpc_r: TPC radius in cm
-        radius_buffer: Buffer for predictions beyond TPC radius
+        tpc_r: TPC radius in cm (default: 66.4)
+        radius_buffer: Buffer for predictions beyond TPC radius (default: 20.0)
 
     Returns:
         Array of shape (n_samples, 2) in physical coordinates

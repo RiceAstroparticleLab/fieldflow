@@ -89,6 +89,7 @@ def single_likelihood_loss(
     posrec_model: eqx.Module,
     civ_map: RegularGridInterpolator,
     tpc_r: float,
+    radius_buffer: float = 20.0,
     min_p: float = 1e-3,
     n_samples: int = 4,
     curl_loss_multiplier: float = 1000.0,
@@ -107,6 +108,7 @@ def single_likelihood_loss(
         posrec_model: Pretrained position reconstruction model
         civ_map: Charge-in-volume survival probability map
         tpc_r: TPC radius for boundary constraints
+        radius_buffer: Buffer for predictions beyond TPC radius
         min_p: Minimum survival probability (for numerical stability)
         n_samples: Number of samples for Monte Carlo estimation
         curl_loss_multiplier: Weight for curl penalty term
@@ -118,7 +120,8 @@ def single_likelihood_loss(
 
     # Generate samples from position reconstruction flow
     samples = generate_samples_for_cnf(
-        keys[0], condition[jnp.newaxis, ...], n_samples, posrec_model
+        keys[0], condition[jnp.newaxis, ...], n_samples, posrec_model,
+        tpc_r, radius_buffer
     )
 
     # Transform samples through CNF model
@@ -245,6 +248,7 @@ def train(
     n_samples: int,
     n_test: int,
     tpc_r: float,
+    radius_buffer: float = 20.0,
     use_best: bool = False,
     loss_fn: Callable = likelihood_loss,
 ) -> tuple[eqx.Module, list, list]:
@@ -268,6 +272,7 @@ def train(
         n_samples: Samples per likelihood evaluation
         n_test: Number of test samples
         tpc_r: TPC radius for boundary constraints
+        radius_buffer: Buffer for predictions beyond TPC radius
         use_best: Whether to return best model based on validation loss
         loss_fn: Loss function to use
 
@@ -299,7 +304,7 @@ def train(
         """Single training step."""
         loss_value, grads = eqx.filter_value_and_grad(loss_fn)(
             model, key, conds, t1s, zs, posrec_model, civ_map, tpc_r,
-            n_samples=n_samples
+            n_samples=n_samples, radius_buffer=radius_buffer
         )
         updates, opt_state = optim.update(
             grads, opt_state, eqx.filter(model, eqx.is_array)
@@ -313,7 +318,8 @@ def train(
     train_loss_list = []
     test_loss_list = [
         loss_fn(model, key, cond_test, t1s_test, zs_test,
-               posrec_model, civ_map, tpc_r, n_samples=n_samples)
+               posrec_model, civ_map, tpc_r, n_samples=n_samples,
+               radius_buffer=radius_buffer)
     ]
 
     for epoch in loop:  # noqa: B007
@@ -348,7 +354,8 @@ def train(
         # Evaluate on test set
         test_loss = loss_fn(
             model, key, cond_test, t1s_test, zs_test,
-            posrec_model, civ_map, tpc_r, n_samples=n_samples
+            posrec_model, civ_map, tpc_r, n_samples=n_samples,
+            radius_buffer=radius_buffer
         )
         test_loss_list.append(test_loss)
 
@@ -407,5 +414,6 @@ def train_model_from_config(
         n_samples=config.training.n_samples,
         n_test=config.training.n_test,
         tpc_r=config.experiment.tpc_r,
+        radius_buffer=config.posrec.radius_buffer,
         use_best=config.training.use_best,
     )

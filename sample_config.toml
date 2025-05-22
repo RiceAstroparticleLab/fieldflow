@@ -1,0 +1,85 @@
+# FieldFlow Configuration File
+# This is a sample configuration file for training continuous normalizing flow
+# models for electric field modeling. Copy this file and modify the parameters
+# as needed for your specific experiment.
+
+# Optional metadata for tracking experiments
+experiment_name = "sample_experiment"
+description = "Sample configuration for FieldFlow training"
+
+[model]
+# Model architecture parameters
+data_size = 2  # Dimensionality of the input data (2D for x,y coordinates)
+exact_logp = true  # Use exact log probability computation (more accurate but slower)
+width_size = 48  # Width of neural network hidden layers
+depth = 3  # Number of hidden layers in the neural network
+
+# ODE solver settings - these control the accuracy and efficiency of the flow
+use_pid_controller = true  # Use adaptive PIDController (recommended) vs constant step size
+rtol = 1e-3  # Relative tolerance for PIDController (smaller = more accurate, slower)
+atol = 1e-6  # Absolute tolerance for PIDController (smaller = more accurate, slower)
+dtmax = 5.0  # Maximum step size for PIDController
+
+# Time integration parameters
+t0 = 0.0  # Starting time for ODE integration
+extract_t1 = 10.0  # End time for extract phase
+dt0 = 1.0  # Initial time step size
+
+[training]
+# Training process parameters
+seed = 42  # Random seed for reproducibility
+learning_rate = 2e-3  # Initial learning rate (will be scheduled during training)
+weight_decay = 1e-4  # L2 regularization parameter
+epochs = 100  # Number of training epochs
+
+# Data and batching parameters
+batch_size = 2048  # Training batch size (adjust based on GPU memory)
+n_samples = 16  # Number of samples per instance for likelihood estimation
+n_train = 200000  # Size of training set
+n_test = 20000  # Size of test/validation set
+
+# Training strategy parameters
+use_best = true  # Use the best model based on validation loss (recommended)
+curl_loss_multiplier = 1000.0  # Weight for curl penalty (encourages curl-free fields)
+z_scale = 5.0  # Scaling factor for z dimension coordinates
+multisteps_every_k = 4  # Gradient accumulation steps for MultiSteps optimizer
+
+[experiment]
+# Physical experimental setup parameters
+tpc_height = 148.6515  # Height of the TPC in cm (for filtering z coordinates)
+tpc_r = 66.4  # Radius of the TPC in cm (for boundary constraints)
+
+[posrec]
+# Position reconstruction flow model parameters
+# These should match the pretrained position reconstruction model
+flow_layers = 5  # Number of coupling layers in the flow
+nn_width = 128  # Width of neural networks in coupling layers
+nn_depth = 3  # Depth of neural networks in coupling layers
+invert_bool = false  # Whether to invert the flow (should match pretrained model)
+cond_dim = 494  # Conditioning dimension (should match hit pattern size)
+
+# Spline transformation parameters
+spline_knots = 5  # Number of knots for rational quadratic splines
+spline_interval = 5.0  # Interval for spline transformations
+
+# Coordinate transformation parameters
+radius_buffer = 20.0  # Buffer for predictions beyond TPC radius (in cm)
+
+# Tips for adjusting parameters:
+#
+# For faster training (less accurate):
+# - Increase rtol and atol (e.g., 1e-2, 1e-5)
+# - Decrease n_samples (e.g., 8)
+# - Increase batch_size if GPU memory allows
+# - Decrease width_size and/or depth
+#
+# For more accurate results (slower training):
+# - Decrease rtol and atol (e.g., 1e-4, 1e-7)
+# - Increase n_samples (e.g., 32)
+# - Increase width_size and/or depth
+# - Increase epochs
+#
+# For debugging:
+# - Set exact_logp = false for faster approximate computation
+# - Reduce n_train and n_test for quick iterations
+# - Set use_best = false to always use the final model
