@@ -64,22 +64,3 @@ spline_interval = 5.0  # Interval for spline transformations
 
 # Coordinate transformation parameters
 radius_buffer = 20.0  # Buffer for predictions beyond TPC radius (in cm)
-
-# Tips for adjusting parameters:
-#
-# For faster training (less accurate):
-# - Increase rtol and atol (e.g., 1e-2, 1e-5)
-# - Decrease n_samples (e.g., 8)
-# - Increase batch_size if GPU memory allows
-# - Decrease width_size and/or depth
-#
-# For more accurate results (slower training):
-# - Decrease rtol and atol (e.g., 1e-4, 1e-7)
-# - Increase n_samples (e.g., 32)
-# - Increase width_size and/or depth
-# - Increase epochs
-#
-# For debugging:
-# - Set exact_logp = false for faster approximate computation
-# - Reduce n_train and n_test for quick iterations
-# - Set use_best = false to always use the final model
