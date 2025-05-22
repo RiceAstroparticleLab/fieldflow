@@ -16,6 +16,7 @@ from jaxtyping import Array, PRNGKeyArray, PyTree
 from tqdm import trange
 
 from fieldflow.posrec import generate_samples_for_cnf
+from fieldflow.utils import compute_r
 
 if TYPE_CHECKING:
     from fieldflow.config import Config
@@ -35,19 +36,6 @@ def rolloff_func(x: Array, rolloff: float = 1e-2) -> Array:
         Regularized array
     """
     return x + rolloff * jnp.exp(-x / rolloff)
-
-
-@jax.jit
-def compute_r(xy_arr: Array) -> Array:
-    """Compute radii from (x,y) coordinates.
-
-    Args:
-        xy_arr: Array of shape (N, 2) containing x,y coordinates
-
-    Returns:
-        Array of shape (N,) containing computed radii
-    """
-    return jnp.sqrt(xy_arr[:, 0]**2 + xy_arr[:, 1]**2)
 
 
 def curl_loss(
