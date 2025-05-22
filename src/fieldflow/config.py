@@ -18,10 +18,11 @@ else:
 
 @dataclass
 class ModelConfig:
-    """Configuration for CNF model architecture and behavior.
+    """Configuration for continuous normalizing flow model architecture and
+    behavior.
 
     This class encapsulates the parameters used to define a Continuous
-    Normalizing Flow (CNF) model, including neural network architecture, ODE
+    Normalizing Flow model, including neural network architecture, ODE
     solver settings, and model-specific hyperparameters.
 
     Attributes:
@@ -56,6 +57,24 @@ class ModelConfig:
     t0: float = 0.0
     extract_t1: float = 10.0
     dt0: float = 1.0
+
+
+@dataclass
+class PosRecFlowConfig:
+    """Configuration for Position Reconstruction Flow model."""
+
+    # Neural network architecture
+    flow_layers: int = 5
+    nn_width: int = 128
+    nn_depth: int = 3
+    invert_bool: bool = False
+
+    # Conditioning
+    cond_dim: int = 494  # Should be set as conditions.shape[1]
+
+    # Spline parameters
+    spline_knots: int = 5
+    spline_interval: float = 5.0
 
 
 @dataclass
