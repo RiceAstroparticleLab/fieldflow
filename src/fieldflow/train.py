@@ -4,7 +4,8 @@ This module provides loss functions, training loops, and utilities for training
 CNF models to learn drift fields from position reconstruction data.
 """
 
-from typing import TYPE_CHECKING, Callable, Tuple
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import equinox as eqx
 import jax
@@ -14,24 +15,22 @@ from jax.scipy.interpolate import RegularGridInterpolator
 from jaxtyping import Array, PRNGKeyArray, PyTree
 from tqdm import trange
 
+from fieldflow.posrec import generate_samples_for_cnf
+
 if TYPE_CHECKING:
     from fieldflow.config import Config
-
-# Physical constants from neural_net_defs.py
-R_MAX = 66.4  # TPC radius in cm
-BUFFER = 20   # Allow predictions up to this number greater than max radius
 
 
 def rolloff_func(x: Array, rolloff: float = 1e-2) -> Array:
     """Apply rolloff regularization to prevent numerical issues.
-    
+
     This function ensures that probabilities don't get too close to zero,
     which can cause numerical instability in log computations.
-    
+
     Args:
         x: Input array to regularize
         rolloff: Minimum value parameter
-        
+
     Returns:
         Regularized array
     """
@@ -39,36 +38,12 @@ def rolloff_func(x: Array, rolloff: float = 1e-2) -> Array:
 
 
 @jax.jit
-def data_inv_transformation(data: Array, max_pred: float = R_MAX + BUFFER) -> Array:
-    """Transform flow coordinates back to physical (x,y) coordinates.
-    
-    This function reverses the coordinate transformation used in the position
-    reconstruction flow, converting from normalized flow space back to
-    physical detector coordinates.
-    
-    Args:
-        data: Array of shape (N, 2) in flow coordinate space
-        max_pred: Maximum prediction radius (TPC radius + buffer)
-        
-    Returns:
-        Array of shape (N, 2) in physical coordinates (cm)
-    """
-    # Note: This is a simplified version. The full transformation would
-    # involve the unconstrain_transform chain from neural_net_defs.py
-    # For now, we assume the posrec flow outputs are already in a form
-    # that can be directly converted to physical coordinates
-    data_0 = (data[:, 0] - 0.5) * max_pred * 2
-    data_1 = (data[:, 1] - 0.5) * max_pred * 2
-    return jnp.stack([data_0, data_1], axis=-1)
-
-
-@jax.jit
 def compute_r(xy_arr: Array) -> Array:
     """Compute radii from (x,y) coordinates.
-    
+
     Args:
         xy_arr: Array of shape (N, 2) containing x,y coordinates
-        
+
     Returns:
         Array of shape (N,) containing computed radii
     """
@@ -76,58 +51,33 @@ def compute_r(xy_arr: Array) -> Array:
 
 
 def curl_loss(
-    key: PRNGKeyArray, 
-    model: eqx.Module, 
-    z: float, 
-    x: Array, 
-    extract_max_z: float = 10.0
+    key: PRNGKeyArray,  # noqa: ARG001
+    model: eqx.Module,
+    z: float,
+    x: Array,
+    extract_max_z: float = 10.0,  # noqa: ARG001
 ) -> float:
     """Compute curl penalty for vector field to encourage curl-free flow.
-    
+
     This loss encourages the learned drift field to have minimal curl,
     which is a physical constraint for certain types of fields.
-    
+
     Args:
-        key: Random key for sampling
+        key: Random key for sampling (unused but kept for interface)
         model: CNF model with func_drift method
         z: Current z coordinate (time parameter)
         x: Spatial coordinates [x, y]
-        extract_max_z: Maximum z value for random sampling
-        
+        extract_max_z: Maximum z value for random sampling (unused)
+
     Returns:
         Curl penalty loss value
     """
-    rand_z = jax.random.uniform(key, (1,), minval=0.0, maxval=extract_max_z)
     jac_drift = jax.jacfwd(lambda a: model.func_drift(z, a))(x)
-    
+
     # For 2D vector field, curl is ∂fy/∂x - ∂fx/∂y
     curl_penalty = (jac_drift[1, 0] - jac_drift[0, 1])**2
-    
+
     return curl_penalty
-
-
-def generate_samples(
-    key: PRNGKeyArray,
-    conditions: Array, 
-    n_samples: int,
-    posrec_model: eqx.Module
-) -> Array:
-    """Generate samples from position reconstruction flow.
-    
-    Args:
-        key: Random key for sampling
-        conditions: Conditioning information (hit patterns)
-        n_samples: Number of samples to generate
-        posrec_model: Pretrained position reconstruction flow model
-        
-    Returns:
-        Array of shape (n_samples, 2) in physical coordinates
-    """
-    # Sample from the position reconstruction flow
-    output = posrec_model.sample(key, (n_samples,), condition=conditions)
-    
-    # Transform back to physical coordinates
-    return data_inv_transformation(jnp.reshape(output, (-1, 2)))
 
 
 def single_likelihood_loss(
@@ -138,16 +88,16 @@ def single_likelihood_loss(
     z: float,
     posrec_model: eqx.Module,
     civ_map: RegularGridInterpolator,
+    tpc_r: float,
     min_p: float = 1e-3,
     n_samples: int = 4,
-    tpc_r: float = R_MAX,
     curl_loss_multiplier: float = 1000.0,
 ) -> float:
     """Compute likelihood loss for a single data point.
-    
+
     This function computes the negative log-likelihood for a single event,
     incorporating survival probability from CIV maps and curl penalty.
-    
+
     Args:
         key: Random key for sampling
         model: CNF model to train
@@ -156,50 +106,54 @@ def single_likelihood_loss(
         z: Physical z coordinate
         posrec_model: Pretrained position reconstruction model
         civ_map: Charge-in-volume survival probability map
+        tpc_r: TPC radius for boundary constraints
         min_p: Minimum survival probability (for numerical stability)
         n_samples: Number of samples for Monte Carlo estimation
-        tpc_r: TPC radius for boundary constraints
         curl_loss_multiplier: Weight for curl penalty term
-        
+
     Returns:
         Negative log-likelihood loss value
     """
     keys = jax.random.split(key, 2)
-    
+
     # Generate samples from position reconstruction flow
-    samples = generate_samples(keys[0], condition[jnp.newaxis, ...], n_samples, posrec_model)
-    
+    samples = generate_samples_for_cnf(
+        keys[0], condition[jnp.newaxis, ...], n_samples, posrec_model
+    )
+
     # Transform samples through CNF model
     transformed_samples, logdet = eqx.filter_vmap(
         lambda y: model.transform_and_log_det(y=y, t1=t1)
     )(samples)
-    
+
     # Compute radii of transformed samples
     sample_r = compute_r(transformed_samples)
-    
+
     # Compute survival probabilities from CIV map
     civ_coords = jnp.vstack((sample_r, jnp.repeat(z, n_samples))).T
     vec_civ_map = jax.vmap(civ_map)
     p_surv = vec_civ_map(civ_coords)
-    
+
     # Apply rolloff regularization and boundary constraints
     p_surv = rolloff_func(p_surv, min_p) * jnp.prod(
         jnp.where(
-            sample_r <= tpc_r, 
-            jnp.ones_like(sample_r), 
+            sample_r <= tpc_r,
+            jnp.ones_like(sample_r),
             jnp.exp((tpc_r - sample_r) / 10000)
         )
     )
-    
+
     # Compute negative log-likelihood using logsumexp for numerical stability
-    likelihood_loss = -jax.nn.logsumexp(a=logdet, b=p_surv) + jnp.log(n_samples)
-    
+    likelihood_loss_val = (
+        -jax.nn.logsumexp(a=logdet, b=p_surv) + jnp.log(n_samples)
+    )
+
     # Add curl penalty
     curl_penalty = curl_loss_multiplier * curl_loss(
         keys[1], model, t1, transformed_samples[0]
     )
-    
-    return likelihood_loss + curl_penalty
+
+    return likelihood_loss_val + curl_penalty
 
 
 @eqx.filter_jit
@@ -211,11 +165,12 @@ def likelihood_loss(
     zs: Array,
     posrec_model: eqx.Module,
     civ_map: RegularGridInterpolator,
+    tpc_r: float,
     n_samples: int = 4,
     **kwargs
 ) -> float:
     """Compute vectorized likelihood loss over a batch of data.
-    
+
     Args:
         model: CNF model to train
         key: Random key for sampling
@@ -224,16 +179,17 @@ def likelihood_loss(
         zs: Batch of physical z coordinates
         posrec_model: Pretrained position reconstruction model
         civ_map: Charge-in-volume survival probability map
+        tpc_r: TPC radius for boundary constraints
         n_samples: Number of samples per data point
         **kwargs: Additional arguments passed to single_likelihood_loss
-        
+
     Returns:
         Mean loss over the batch
     """
     keys = jax.random.split(key, len(zs))
     vec_loss = eqx.filter_vmap(
         lambda k, cond, t1, z: single_likelihood_loss(
-            k, model, cond, t1, z, posrec_model, civ_map, 
+            k, model, cond, t1, z, posrec_model, civ_map, tpc_r,
             n_samples=n_samples, **kwargs
         )
     )
@@ -242,32 +198,35 @@ def likelihood_loss(
 
 def create_optimizer(config: "Config") -> optax.GradientTransformation:
     """Create optimizer from configuration.
-    
+
     Args:
         config: Configuration object containing training parameters
-        
+
     Returns:
         Configured optax optimizer
     """
     # Create learning rate schedule
     optax_sched = optax.join_schedules([
-        optax.constant_schedule(config.training.learning_rate), 
-        optax.constant_schedule(config.training.learning_rate * 0.1), 
+        optax.constant_schedule(config.training.learning_rate),
+        optax.constant_schedule(config.training.learning_rate * 0.1),
         optax.constant_schedule(config.training.learning_rate * 0.01)
     ], [25, 30])
-    
+
     # Create base optimizer
     optimizer = optax.adamw(
-        learning_rate=optax_sched, 
+        learning_rate=optax_sched,
         weight_decay=config.training.weight_decay
     )
-    
-    # Add gradient clipping and finite check
+
+    # Add gradient clipping and finite check with configurable steps
     optimizer = optax.apply_if_finite(
-        optax.MultiSteps(optimizer, every_k_schedule=4), 
+        optax.MultiSteps(
+            optimizer,
+            every_k_schedule=config.training.multisteps_every_k
+        ),
         max_consecutive_errors=4
     )
-    
+
     return optimizer
 
 
@@ -285,21 +244,22 @@ def train(
     n_batch: int,
     n_samples: int,
     n_test: int,
+    tpc_r: float,
     use_best: bool = False,
     loss_fn: Callable = likelihood_loss,
-) -> Tuple[eqx.Module, list, list]:
+) -> tuple[eqx.Module, list, list]:
     """Train a continuous normalizing flow model.
-    
+
     This function implements the main training loop with batching, progress
     tracking, and optional best model selection based on validation loss.
-    
+
     Args:
         key: Random key for training
         model: CNF model to train
         optim: Optimizer (from create_optimizer)
         epochs: Number of training epochs
         conditions: All hit pattern conditions
-        t1s: All scaled z coordinates  
+        t1s: All scaled z coordinates
         zs: All physical z coordinates
         posrec_model: Pretrained position reconstruction model
         civ_map: Charge-in-volume survival probability map
@@ -307,95 +267,98 @@ def train(
         n_batch: Batch size
         n_samples: Samples per likelihood evaluation
         n_test: Number of test samples
+        tpc_r: TPC radius for boundary constraints
         use_best: Whether to return best model based on validation loss
         loss_fn: Loss function to use
-        
+
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)
     """
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
-    
+
     # Split data into train/test
     cond_train = conditions[:-n_test]
     t1s_train = t1s[:-n_test]
     zs_train = zs[:-n_test]
-    
+
     cond_test = conditions[-n_test:]
     t1s_test = t1s[-n_test:]
     zs_test = zs[-n_test:]
-    
+
     n_data_loops = n_train // n_batch
-    
+
     @eqx.filter_jit
     def make_step(
-        model: eqx.Module, 
-        opt_state: PyTree, 
-        key: PRNGKeyArray, 
-        conds: Array, 
-        t1s: Array, 
+        model: eqx.Module,
+        opt_state: PyTree,
+        key: PRNGKeyArray,
+        conds: Array,
+        t1s: Array,
         zs: Array
-    ) -> Tuple[eqx.Module, PyTree, float]:
+    ) -> tuple[eqx.Module, PyTree, float]:
         """Single training step."""
         loss_value, grads = eqx.filter_value_and_grad(loss_fn)(
-            model, key, conds, t1s, zs, posrec_model, civ_map, n_samples=n_samples
+            model, key, conds, t1s, zs, posrec_model, civ_map, tpc_r,
+            n_samples=n_samples
         )
         updates, opt_state = optim.update(
             grads, opt_state, eqx.filter(model, eqx.is_array)
         )
         model = eqx.apply_updates(model, updates)
         return model, opt_state, loss_value
-    
+
     # Training loop
     loop = trange(epochs)
     best_model = model
     train_loss_list = []
     test_loss_list = [
-        loss_fn(model, key, cond_test, t1s_test, zs_test, 
-               posrec_model, civ_map, n_samples=n_samples)
+        loss_fn(model, key, cond_test, t1s_test, zs_test,
+               posrec_model, civ_map, tpc_r, n_samples=n_samples)
     ]
-    
-    for i in loop:
+
+    for epoch in loop:  # noqa: B007
         key, thiskey = jax.random.split(key, 2)
-        
+
         # Shuffle training data
         indices = jax.random.permutation(thiskey, jnp.arange(n_train))
         cond_train = cond_train[indices]
         t1s_train = t1s_train[indices]
         zs_train = zs_train[indices]
-        
+
         # Training steps for this epoch
         for j in range(n_data_loops):
             key, thiskey = jax.random.split(key, 2)
             this_conds = cond_train[j * n_batch : (j + 1) * n_batch]
             this_t1s = t1s_train[j * n_batch : (j + 1) * n_batch]
             this_zs = zs_train[j * n_batch : (j + 1) * n_batch]
-            
+
             model, opt_state, train_loss = make_step(
                 model, opt_state, thiskey, this_conds, this_t1s, this_zs
             )
             train_loss_list.append(train_loss)
-            
+
             # Update progress bar
+            train_ma = jnp.mean(jnp.array(train_loss_list[-64:]))
             loop.set_postfix({
-                'loss': f'{train_loss_list[-1]:0.2f}', 
-                'loss MA': f'{jnp.mean(jnp.array(train_loss_list[-64:])):0.3f}',
-                'test loss': f'{test_loss_list[-1]:0.3f}',
+                "loss": f"{train_loss_list[-1]:0.2f}",
+                "loss MA": f"{train_ma:0.3f}",
+                "test loss": f"{test_loss_list[-1]:0.3f}",
             })
-        
+
         # Evaluate on test set
         test_loss = loss_fn(
-            model, key, cond_test, t1s_test, zs_test, 
-            posrec_model, civ_map, n_samples=n_samples
+            model, key, cond_test, t1s_test, zs_test,
+            posrec_model, civ_map, tpc_r, n_samples=n_samples
         )
         test_loss_list.append(test_loss)
-        
+
         # Track best model
         if jnp.argmin(jnp.array(test_loss_list)) == len(test_loss_list) - 1:
             best_model = model
-    
+
     if use_best:
         model = best_model
-        
+
     return model, train_loss_list, test_loss_list
 
 
@@ -408,12 +371,12 @@ def train_model_from_config(
     posrec_model: eqx.Module,
     civ_map: RegularGridInterpolator,
     config: "Config",
-) -> Tuple[eqx.Module, list, list]:
+) -> tuple[eqx.Module, list, list]:
     """Train model using configuration parameters.
-    
+
     Convenience function that creates optimizer and calls train() with
     parameters from the configuration object.
-    
+
     Args:
         key: Random key for training
         model: CNF model to train
@@ -423,12 +386,12 @@ def train_model_from_config(
         posrec_model: Pretrained position reconstruction model
         civ_map: Charge-in-volume survival probability map
         config: Configuration object
-        
+
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)
     """
     optimizer = create_optimizer(config)
-    
+
     return train(
         key=key,
         model=model,
@@ -443,5 +406,6 @@ def train_model_from_config(
         n_batch=config.training.batch_size,
         n_samples=config.training.n_samples,
         n_test=config.training.n_test,
+        tpc_r=config.experiment.tpc_r,
         use_best=config.training.use_best,
     )

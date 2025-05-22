@@ -7,7 +7,7 @@ for model architecture and training workflows.
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 # Import the appropriate TOML parser based on Python version
 if sys.version_info >= (3, 11):
@@ -74,6 +74,9 @@ class PosRecFlowConfig:
     spline_knots: int = 5
     spline_interval: float = 5.0
 
+    # Coordinate transformation parameters
+    radius_buffer: float = 20.0  # Buffer for predictions beyond TPC radius
+
 
 @dataclass
 class TrainingConfig:
@@ -94,6 +97,7 @@ class TrainingConfig:
         use_best: Whether to use the best model based on validation.
         curl_loss_multiplier: Coefficient for curl loss component.
         z_scale: Scaling factor for z dimension.
+        multisteps_every_k: Steps for MultiSteps optimizer.
     """
 
     # Training process parameters
@@ -112,6 +116,7 @@ class TrainingConfig:
     use_best: bool = True
     curl_loss_multiplier: float = 1000.0
     z_scale: float = 5.0
+    multisteps_every_k: int = 4
 
 
 @dataclass
@@ -123,9 +128,11 @@ class ExperimentConfig:
 
     Attributes:
         tpc_height: Height of the TPC for filtering z coordinates.
+        tpc_r: Radius of the TPC for boundary constraints.
     """
 
     tpc_height: float = 148.6515
+    tpc_r: float = 66.4  # TPC radius in cm
 
 
 @dataclass
