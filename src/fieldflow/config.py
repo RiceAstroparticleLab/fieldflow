@@ -118,7 +118,7 @@ class TrainingConfig:
     curl_loss_multiplier: float = 1000.0
     z_scale: float = 5.0
     multisteps_every_k: int = 4
-    
+
     # Distributed training parameters
     num_devices: int = 1
 

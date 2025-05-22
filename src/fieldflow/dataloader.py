@@ -4,16 +4,12 @@ This module provides functions for loading hitpattern data and CIV maps,
 extracted directly from the working notebook code.
 """
 
-import gzip
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 from jax.scipy.interpolate import RegularGridInterpolator
-
 
 if TYPE_CHECKING:
     from fieldflow.config import Config
@@ -35,12 +31,12 @@ def load_civ_map(file_path: str | Path) -> RegularGridInterpolator:
         raise FileNotFoundError(f"CIV map file not found: {file_path}")
 
     with np.load(file_path) as file:
-        R = file["R"]
-        Z = file["Z"]
+        r = file["R"]
+        z = file["Z"]
         vals = file["vals"]
 
     civ_map = RegularGridInterpolator(
-        (R, Z),
+        (r, z),
         vals,
         bounds_error=False,
         fill_value=0,

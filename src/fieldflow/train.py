@@ -65,7 +65,7 @@ def curl_loss(
     jac_drift = jax.jacfwd(lambda a: model.func_drift(z, a))(x)
 
     # For 2D vector field, curl is ∂fy/∂x - ∂fx/∂y
-    curl_penalty = (jac_drift[1, 0] - jac_drift[0, 1])**2
+    curl_penalty = (jac_drift[1, 0] - jac_drift[0, 1]) ** 2
 
     return curl_penalty
 
@@ -110,8 +110,12 @@ def single_likelihood_loss(
 
     # Generate samples from position reconstruction flow
     samples = generate_samples_for_cnf(
-        keys[0], condition[jnp.newaxis, ...], n_samples, posrec_model,
-        tpc_r, radius_buffer
+        keys[0],
+        condition[jnp.newaxis, ...],
+        n_samples,
+        posrec_model,
+        tpc_r,
+        radius_buffer,
     )
 
     # Transform samples through CNF model
@@ -132,13 +136,13 @@ def single_likelihood_loss(
         jnp.where(
             sample_r <= tpc_r,
             jnp.ones_like(sample_r),
-            jnp.exp((tpc_r - sample_r) / 10000)
+            jnp.exp((tpc_r - sample_r) / 10000),
         )
     )
 
     # Compute negative log-likelihood using logsumexp for numerical stability
-    likelihood_loss_val = (
-        -jax.nn.logsumexp(a=logdet, b=p_surv) + jnp.log(n_samples)
+    likelihood_loss_val = -jax.nn.logsumexp(a=logdet, b=p_surv) + jnp.log(
+        n_samples
     )
 
     # Add curl penalty
@@ -160,7 +164,7 @@ def likelihood_loss(
     civ_map: RegularGridInterpolator,
     tpc_r: float,
     n_samples: int = 4,
-    **kwargs
+    **kwargs,
 ) -> float:
     """Compute vectorized likelihood loss over a batch of data.
 
@@ -182,8 +186,16 @@ def likelihood_loss(
     keys = jax.random.split(key, len(zs))
     vec_loss = eqx.filter_vmap(
         lambda k, cond, t1, z: single_likelihood_loss(
-            k, model, cond, t1, z, posrec_model, civ_map, tpc_r,
-            n_samples=n_samples, **kwargs
+            k,
+            model,
+            cond,
+            t1,
+            z,
+            posrec_model,
+            civ_map,
+            tpc_r,
+            n_samples=n_samples,
+            **kwargs,
         )
     )
     return jnp.mean(vec_loss(keys, conditions, t1s, zs))
@@ -199,25 +211,26 @@ def create_optimizer(config: "Config") -> optax.GradientTransformation:
         Configured optax optimizer
     """
     # Create learning rate schedule
-    optax_sched = optax.join_schedules([
-        optax.constant_schedule(config.training.learning_rate),
-        optax.constant_schedule(config.training.learning_rate * 0.1),
-        optax.constant_schedule(config.training.learning_rate * 0.01)
-    ], [25, 30])
+    optax_sched = optax.join_schedules(
+        [
+            optax.constant_schedule(config.training.learning_rate),
+            optax.constant_schedule(config.training.learning_rate * 0.1),
+            optax.constant_schedule(config.training.learning_rate * 0.01),
+        ],
+        [25, 30],
+    )
 
     # Create base optimizer
     optimizer = optax.adamw(
-        learning_rate=optax_sched,
-        weight_decay=config.training.weight_decay
+        learning_rate=optax_sched, weight_decay=config.training.weight_decay
     )
 
     # Add gradient clipping and finite check with configurable steps
     optimizer = optax.apply_if_finite(
         optax.MultiSteps(
-            optimizer,
-            every_k_schedule=config.training.multisteps_every_k
+            optimizer, every_k_schedule=config.training.multisteps_every_k
         ),
-        max_consecutive_errors=4
+        max_consecutive_errors=4,
     )
 
     return optimizer
@@ -276,20 +289,20 @@ def train(
     # Set up device mesh for multi-GPU training
     devices = jax.devices()[:num_devices]
     device_mesh = jax.sharding.Mesh(devices, ("data",))
-    
+
     # Create data sharding specification
     data_sharding = jax.sharding.NamedSharding(
         device_mesh, jax.sharding.PartitionSpec("data")
     )
-    
+
     # Validate batch size and warn if not evenly divisible
     if n_batch % num_devices != 0:
         warnings.warn(
             f"Batch size {n_batch} is not evenly divisible by num_devices "
-            f"{num_devices}. Some devices may process fewer samples per batch, "
-            f"which could lead to slightly uneven GPU utilization.",
+            f"{num_devices}. Some devices may process fewer samples per batch,"
+            f" which could lead to slightly uneven GPU utilization.",
             UserWarning,
-            stacklevel=2
+            stacklevel=2,
         )
 
     # Split data into train/test and convert training data to NumPy arrays
@@ -313,35 +326,44 @@ def train(
         conds: Array,
         t1s: Array,
         zs: Array,
-        sharding: jax.sharding.Sharding
+        sharding: jax.sharding.Sharding,
     ) -> tuple[eqx.Module, PyTree, float]:
         """Single training step with multi-device support."""
         # Generate replicated sharding from data sharding
         replicated = sharding.replicate()
-        
+
         # Shard model and opt_state (replicated across all devices)
         model_replicated, opt_state_replicated = eqx.filter_shard(
             (model, opt_state), replicated
         )
-        
-        # Shard data across devices  
+
+        # Shard data across devices
         conds_sharded, t1s_sharded, zs_sharded = eqx.filter_shard(
             (conds, t1s, zs), sharding
         )
-        
+
         # Compute loss and gradients (distributed across devices)
         loss_value, grads = eqx.filter_value_and_grad(loss_fn)(
-            model_replicated, key, conds_sharded, t1s_sharded, zs_sharded, 
-            posrec_model, civ_map, tpc_r, n_samples=n_samples, 
-            radius_buffer=radius_buffer
+            model_replicated,
+            key,
+            conds_sharded,
+            t1s_sharded,
+            zs_sharded,
+            posrec_model,
+            civ_map,
+            tpc_r,
+            n_samples=n_samples,
+            radius_buffer=radius_buffer,
         )
-        
+
         # Update model (gradients automatically aggregated across devices)
         updates, opt_state_new = optim.update(
-            grads, opt_state_replicated, eqx.filter(model_replicated, eqx.is_array)
+            grads,
+            opt_state_replicated,
+            eqx.filter(model_replicated, eqx.is_array),
         )
         model_new = eqx.apply_updates(model_replicated, updates)
-        
+
         # Return updated model and optimizer state
         return model_new, opt_state_new, loss_value
 
@@ -350,9 +372,18 @@ def train(
     best_model = model
     train_loss_list = []
     test_loss_list = [
-        loss_fn(model, key, cond_test, t1s_test, zs_test,
-               posrec_model, civ_map, tpc_r, n_samples=n_samples,
-               radius_buffer=radius_buffer)
+        loss_fn(
+            model,
+            key,
+            cond_test,
+            t1s_test,
+            zs_test,
+            posrec_model,
+            civ_map,
+            tpc_r,
+            n_samples=n_samples,
+            radius_buffer=radius_buffer,
+        )
     ]
 
     for _ in loop:
@@ -362,7 +393,7 @@ def train(
         indices_jax = jax.random.permutation(thiskey, jnp.arange(n_train))
         # Convert to NumPy for CPU-based indexing
         indices_np = np.array(indices_jax)
-        
+
         # Use NumPy arrays for all data operations (stays in CPU)
         cond_train_np = cond_train_orig_np[indices_np]
         t1s_train_np = t1s_train_orig_np[indices_np]
@@ -371,37 +402,52 @@ def train(
         # Training steps for this epoch
         for j in range(n_data_loops):
             key, thiskey = jax.random.split(key, 2)
-            
+
             # Extract batch as NumPy arrays (stays in CPU)
             batch_start = j * n_batch
             batch_end = (j + 1) * n_batch
             batch_conds_np = cond_train_np[batch_start:batch_end]
             batch_t1s_np = t1s_train_np[batch_start:batch_end]
             batch_zs_np = zs_train_np[batch_start:batch_end]
-            
+
             # Convert numpy to JAX arrays (let make_step handle sharding)
             batch_conds = jnp.array(batch_conds_np)
             batch_t1s = jnp.array(batch_t1s_np)
             batch_zs = jnp.array(batch_zs_np)
 
             model, opt_state, train_loss = make_step(
-                model, opt_state, thiskey, batch_conds, batch_t1s, batch_zs, data_sharding
+                model,
+                opt_state,
+                thiskey,
+                batch_conds,
+                batch_t1s,
+                batch_zs,
+                data_sharding,
             )
             train_loss_list.append(train_loss)
 
             # Update progress bar
             train_ma = jnp.mean(jnp.array(train_loss_list[-64:]))
-            loop.set_postfix({
-                "loss": f"{train_loss_list[-1]:0.2f}",
-                "loss MA": f"{train_ma:0.3f}",
-                "test loss": f"{test_loss_list[-1]:0.3f}",
-            })
+            loop.set_postfix(
+                {
+                    "loss": f"{train_loss_list[-1]:0.2f}",
+                    "loss MA": f"{train_ma:0.3f}",
+                    "test loss": f"{test_loss_list[-1]:0.3f}",
+                }
+            )
 
         # Evaluate on test set
         test_loss = loss_fn(
-            model, key, cond_test, t1s_test, zs_test,
-            posrec_model, civ_map, tpc_r, n_samples=n_samples,
-            radius_buffer=radius_buffer
+            model,
+            key,
+            cond_test,
+            t1s_test,
+            zs_test,
+            posrec_model,
+            civ_map,
+            tpc_r,
+            n_samples=n_samples,
+            radius_buffer=radius_buffer,
         )
         test_loss_list.append(test_loss)
 
