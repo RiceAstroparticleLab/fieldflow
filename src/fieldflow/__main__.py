@@ -70,15 +70,19 @@ def main():
     parser = argparse.ArgumentParser(description="FieldFlow training")
     parser.add_argument("config", help="Path to configuration file")
     parser.add_argument(
-        "--pretrained", help="Path to pretrained model for fine-tuning (optional)"
+        "--pretrained",
+        help="Path to pretrained model for fine-tuning (optional)",
     )
     parser.add_argument(
         "--output", help="Output path for trained model (default: model.eqx)"
     )
-    parser.add_argument("--hitpatterns", help="Path to hitpatterns data file (.npz)")
+    parser.add_argument(
+        "--hitpatterns", help="Path to hitpatterns data file (.npz)"
+    )
     parser.add_argument("--civ-map", help="Path to CIV map file (.json.gz)")
     parser.add_argument(
-        "--posrec-model", help="Path to pretrained position reconstruction model (.eqx)"
+        "--posrec-model",
+        help="Path to pretrained position reconstruction model (.eqx)",
     )
     args = parser.parse_args()
 
@@ -100,7 +104,9 @@ def main():
 
     # Check if data files exist
     if not os.path.exists(hitpatterns_path):
-        raise FileNotFoundError(f"Hitpatterns file not found: {hitpatterns_path}")
+        raise FileNotFoundError(
+            f"Hitpatterns file not found: {hitpatterns_path}"
+        )
     if not os.path.exists(civ_map_path):
         raise FileNotFoundError(f"CIV map file not found: {civ_map_path}")
     if not os.path.exists(posrec_model_path):
@@ -126,9 +132,13 @@ def main():
     if args.pretrained:
         pretrained_path = Path(args.pretrained)
         if not pretrained_path.exists():
-            raise FileNotFoundError(f"Pretrained model not found: {pretrained_path}")
+            raise FileNotFoundError(
+                f"Pretrained model not found: {pretrained_path}"
+            )
 
-        print(f"Loading pretrained model from {pretrained_path} for fine-tuning")
+        print(
+            f"Loading pretrained model from {pretrained_path} for fine-tuning"
+        )
         # Create a dummy model with the right structure first
         dummy_model = create_model_from_config(config, subkey)
         # Then load the pretrained weights into it
