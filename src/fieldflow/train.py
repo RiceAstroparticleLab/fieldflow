@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from jax.scipy.interpolate import RegularGridInterpolator
 from jaxtyping import Array, PRNGKeyArray, PyTree
@@ -269,11 +270,13 @@ def train(
     """
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
 
-    # Split data into train/test
-    cond_train_orig = conditions[:-n_test]
-    t1s_train_orig = t1s[:-n_test]
-    zs_train_orig = zs[:-n_test]
+    # Split data into train/test and convert training data to NumPy arrays
+    # This keeps the full dataset in CPU memory instead of GPU memory
+    cond_train_orig_np = np.asarray(conditions[:-n_test])
+    t1s_train_orig_np = np.asarray(t1s[:-n_test])
+    zs_train_orig_np = np.asarray(zs[:-n_test])
 
+    # Test data stays as JAX arrays since it's small
     cond_test = conditions[-n_test:]
     t1s_test = t1s[-n_test:]
     zs_test = zs[-n_test:]
@@ -313,18 +316,28 @@ def train(
     for _ in loop:
         key, thiskey = jax.random.split(key, 2)
 
-        # Shuffle training data
-        indices = jax.random.permutation(thiskey, jnp.arange(n_train))
-        cond_train = cond_train_orig[indices]
-        t1s_train = t1s_train_orig[indices]
-        zs_train = zs_train_orig[indices]
+        # Generate permutation indices using JAX (deterministic)
+        indices_jax = jax.random.permutation(thiskey, jnp.arange(n_train))
+        # Convert to NumPy for CPU-based indexing
+        indices_np = np.array(indices_jax)
+        
+        # Use NumPy arrays for all data operations (stays in CPU)
+        cond_train_np = cond_train_orig_np[indices_np]
+        t1s_train_np = t1s_train_orig_np[indices_np]
+        zs_train_np = zs_train_orig_np[indices_np]
 
         # Training steps for this epoch
         for j in range(n_data_loops):
             key, thiskey = jax.random.split(key, 2)
-            this_conds = cond_train[j * n_batch : (j + 1) * n_batch]
-            this_t1s = t1s_train[j * n_batch : (j + 1) * n_batch]
-            this_zs = zs_train[j * n_batch : (j + 1) * n_batch]
+            
+            # Extract current batch with NumPy (CPU operation)
+            batch_start = j * n_batch
+            batch_end = (j + 1) * n_batch
+            
+            # Convert batch to JAX arrays only when needed
+            this_conds = jnp.array(cond_train_np[batch_start:batch_end])
+            this_t1s = jnp.array(t1s_train_np[batch_start:batch_end])
+            this_zs = jnp.array(zs_train_np[batch_start:batch_end])
 
             model, opt_state, train_loss = make_step(
                 model, opt_state, thiskey, this_conds, this_t1s, this_zs
