@@ -131,9 +131,7 @@ def posrec_flow(pretrained_posrec_flow_path, config: "Config"):
 
     posrec_model = coupling_flow(
         flow_key,
-        base_dist=StandardNormal(
-            2,
-        ),
+        base_dist=StandardNormal((2,)),
         invert=config.posrec.invert_bool,
         flow_layers=config.posrec.flow_layers,
         nn_width=config.posrec.nn_width,
