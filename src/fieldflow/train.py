@@ -322,7 +322,7 @@ def train(
                radius_buffer=radius_buffer)
     ]
 
-    for epoch in loop:  # noqa: B007
+    for _ in loop:
         key, thiskey = jax.random.split(key, 2)
 
         # Shuffle training data
