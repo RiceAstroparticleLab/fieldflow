@@ -20,12 +20,12 @@ if TYPE_CHECKING:
 
 
 def load_civ_map(file_path: str | Path) -> RegularGridInterpolator:
-    """Load CIV map from gzipped JSON file.
+    """Load CIV map from npz file.
 
     Direct adaptation of load_civ() function from notebook.
 
     Args:
-        file_path: Path to the gzipped JSON file containing CIV map data
+        file_path: Path to the .npz file containing CIV map data
 
     Returns:
         RegularGridInterpolator function for CIV map
@@ -34,14 +34,14 @@ def load_civ_map(file_path: str | Path) -> RegularGridInterpolator:
     if not file_path.exists():
         raise FileNotFoundError(f"CIV map file not found: {file_path}")
 
-    with gzip.open(file_path, "rb") as f:
-        file = json.load(f)
+    with np.load(file_path) as file:
+        R = file["R"]
+        Z = file["Z"]
+        vals = file["vals"]
 
     civ_map = RegularGridInterpolator(
-        tuple([np.linspace(*ax[1]) for ax in file["coordinate_system"]]),
-        np.array(file["survival_probability_map"]).reshape(
-            [ax[1][-1] for ax in file["coordinate_system"]]
-        ),
+        (R, Z),
+        vals,
         bounds_error=False,
         fill_value=0,
     )
