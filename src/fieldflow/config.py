@@ -30,7 +30,6 @@ class ModelConfig:
         exact_logp: Whether to use exact log probability calculation.
         width_size: Width of neural network layers.
         depth: Depth of neural network.
-        func_class: The function class to use ("MLPFunc" or "Func").
         use_pid_controller: Whether to use PIDController instead of
             ConstantStepSize.
         rtol: Relative tolerance for PIDController.
@@ -45,7 +44,6 @@ class ModelConfig:
     exact_logp: bool = True
     width_size: int = 48
     depth: int = 3
-    func_class: Literal["MLPFunc", "Func"] = "MLPFunc"
 
     # ODE Solver settings
     use_pid_controller: bool = True
@@ -141,6 +139,7 @@ class Config:
         model: Model architecture configuration.
         training: Training process configuration.
         experiment: Experimental setup configuration.
+        posrec: Position reconstruction flow configuration.
         experiment_name: Optional name for the experiment.
         description: Optional description of the experiment.
     """
@@ -148,6 +147,7 @@ class Config:
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
+    posrec: PosRecFlowConfig = field(default_factory=PosRecFlowConfig)
     experiment_name: str | None = None
     description: str | None = None
 
@@ -168,12 +168,13 @@ class Config:
         model_dict = config_dict.get("model", {})
         training_dict = config_dict.get("training", {})
         experiment_dict = config_dict.get("experiment", {})
+        posrec_dict = config_dict.get("posrec", {})
 
         # Get remaining kwargs excluding nested configs
         remaining_kwargs = {
             k: v
             for k, v in config_dict.items()
-            if k not in ("model", "training", "experiment")
+            if k not in ("model", "training", "experiment", "posrec")
         }
 
         # Create the config with nested objects
@@ -181,6 +182,7 @@ class Config:
             model=ModelConfig(**model_dict),
             training=TrainingConfig(**training_dict),
             experiment=ExperimentConfig(**experiment_dict),
+            posrec=PosRecFlowConfig(**posrec_dict),
             **remaining_kwargs,
         )
 
