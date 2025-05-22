@@ -282,9 +282,9 @@ def train(
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
 
     # Split data into train/test
-    cond_train = conditions[:-n_test]
-    t1s_train = t1s[:-n_test]
-    zs_train = zs[:-n_test]
+    cond_train_orig = conditions[:-n_test]
+    t1s_train_orig = t1s[:-n_test]
+    zs_train_orig = zs[:-n_test]
 
     cond_test = conditions[-n_test:]
     t1s_test = t1s[-n_test:]
@@ -327,9 +327,9 @@ def train(
 
         # Shuffle training data
         indices = jax.random.permutation(thiskey, jnp.arange(n_train))
-        cond_train = cond_train[indices]
-        t1s_train = t1s_train[indices]
-        zs_train = zs_train[indices]
+        cond_train = cond_train_orig[indices]
+        t1s_train = t1s_train_orig[indices]
+        zs_train = zs_train_orig[indices]
 
         # Training steps for this epoch
         for j in range(n_data_loops):

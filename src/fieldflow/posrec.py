@@ -19,7 +19,7 @@ from flowjax.flows import coupling_flow
 from jaxtyping import Array, PRNGKeyArray
 
 if TYPE_CHECKING:
-    from config import Config
+    from fieldflow.config import Config
 
 # Transformation parameters from neural_net_defs.py
 EPS = 1e-7  # Avoid potential numerical issues

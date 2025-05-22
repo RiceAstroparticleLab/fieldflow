@@ -149,6 +149,8 @@ class ContinuousNormalizingFlow(eqx.Module):
         key,
         stepsizecontroller=None,
         func=MLPFunc,
+        t0=0.0,
+        dt0=1.0,
         **kwargs,
     ):
 
@@ -166,8 +168,8 @@ class ContinuousNormalizingFlow(eqx.Module):
         )
         self.data_size = data_size
         self.exact_logp = exact_logp
-        self.t0 = 0
-        self.dt0 = 1
+        self.t0 = t0
+        self.dt0 = dt0
         self.stepsizecontroller = stepsizecontroller
 
     def transform(self, *, y, t1):
@@ -210,7 +212,8 @@ class ContinuousNormalizingFlow(eqx.Module):
             term = diffrax.ODETerm(exact_logp_wrapper)
         else:
             term = diffrax.ODETerm(approx_logp_wrapper)
-        eps = jax.random.normal(self.key, y.shape)
+        self.key, subkey = jax.random.split(self.key)
+        eps = jax.random.normal(subkey, y.shape)
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
@@ -244,7 +247,8 @@ class ContinuousNormalizingFlow(eqx.Module):
             term = diffrax.ODETerm(exact_logp_wrapper)
         else:
             term = diffrax.ODETerm(approx_logp_wrapper)
-        eps = jax.random.normal(self.key, y.shape)
+        self.key, subkey = jax.random.split(self.key)
+        eps = jax.random.normal(subkey, y.shape)
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
