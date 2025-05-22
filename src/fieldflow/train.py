@@ -4,6 +4,7 @@ This module provides loss functions, training loops, and utilities for training
 CNF models to learn drift fields from position reconstruction data.
 """
 
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -240,6 +241,7 @@ def train(
     radius_buffer: float = 20.0,
     use_best: bool = False,
     loss_fn: Callable = likelihood_loss,
+    num_devices: int = 1,
 ) -> tuple[eqx.Module, list, list]:
     """Train a continuous normalizing flow model.
 
@@ -264,11 +266,31 @@ def train(
         radius_buffer: Buffer for predictions beyond TPC radius
         use_best: Whether to return best model based on validation loss
         loss_fn: Loss function to use
+        num_devices: Number of devices to use for data parallelization
 
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)
     """
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
+
+    # Set up device mesh for multi-GPU training
+    devices = jax.devices()[:num_devices]
+    device_mesh = jax.sharding.Mesh(devices, ("data",))
+    
+    # Create data sharding specification
+    data_sharding = jax.sharding.NamedSharding(
+        device_mesh, jax.sharding.PartitionSpec("data")
+    )
+    
+    # Validate batch size and warn if not evenly divisible
+    if n_batch % num_devices != 0:
+        warnings.warn(
+            f"Batch size {n_batch} is not evenly divisible by num_devices "
+            f"{num_devices}. Some devices may process fewer samples per batch, "
+            f"which could lead to slightly uneven GPU utilization.",
+            UserWarning,
+            stacklevel=2
+        )
 
     # Split data into train/test and convert training data to NumPy arrays
     # This keeps the full dataset in CPU memory instead of GPU memory
@@ -283,25 +305,45 @@ def train(
 
     n_data_loops = n_train // n_batch
 
-    @eqx.filter_jit
+    @eqx.filter_jit(donate="all")
     def make_step(
         model: eqx.Module,
         opt_state: PyTree,
         key: PRNGKeyArray,
         conds: Array,
         t1s: Array,
-        zs: Array
+        zs: Array,
+        sharding: jax.sharding.Sharding
     ) -> tuple[eqx.Module, PyTree, float]:
-        """Single training step."""
+        """Single training step with multi-device support."""
+        # Generate replicated sharding from data sharding
+        replicated = sharding.replicate()
+        
+        # Shard model and opt_state (replicated across all devices)
+        model_replicated, opt_state_replicated = eqx.filter_shard(
+            (model, opt_state), replicated
+        )
+        
+        # Shard data across devices  
+        conds_sharded, t1s_sharded, zs_sharded = eqx.filter_shard(
+            (conds, t1s, zs), sharding
+        )
+        
+        # Compute loss and gradients (distributed across devices)
         loss_value, grads = eqx.filter_value_and_grad(loss_fn)(
-            model, key, conds, t1s, zs, posrec_model, civ_map, tpc_r,
-            n_samples=n_samples, radius_buffer=radius_buffer
+            model_replicated, key, conds_sharded, t1s_sharded, zs_sharded, 
+            posrec_model, civ_map, tpc_r, n_samples=n_samples, 
+            radius_buffer=radius_buffer
         )
-        updates, opt_state = optim.update(
-            grads, opt_state, eqx.filter(model, eqx.is_array)
+        
+        # Update model (gradients automatically aggregated across devices)
+        updates, opt_state_new = optim.update(
+            grads, opt_state_replicated, eqx.filter(model_replicated, eqx.is_array)
         )
-        model = eqx.apply_updates(model, updates)
-        return model, opt_state, loss_value
+        model_new = eqx.apply_updates(model_replicated, updates)
+        
+        # Return updated model and optimizer state
+        return model_new, opt_state_new, loss_value
 
     # Training loop
     loop = trange(epochs)
@@ -330,17 +372,20 @@ def train(
         for j in range(n_data_loops):
             key, thiskey = jax.random.split(key, 2)
             
-            # Extract current batch with NumPy (CPU operation)
+            # Extract batch as NumPy arrays (stays in CPU)
             batch_start = j * n_batch
             batch_end = (j + 1) * n_batch
+            batch_conds_np = cond_train_np[batch_start:batch_end]
+            batch_t1s_np = t1s_train_np[batch_start:batch_end]
+            batch_zs_np = zs_train_np[batch_start:batch_end]
             
-            # Convert batch to JAX arrays only when needed
-            this_conds = jnp.array(cond_train_np[batch_start:batch_end])
-            this_t1s = jnp.array(t1s_train_np[batch_start:batch_end])
-            this_zs = jnp.array(zs_train_np[batch_start:batch_end])
+            # Convert numpy to JAX arrays (let make_step handle sharding)
+            batch_conds = jnp.array(batch_conds_np)
+            batch_t1s = jnp.array(batch_t1s_np)
+            batch_zs = jnp.array(batch_zs_np)
 
             model, opt_state, train_loss = make_step(
-                model, opt_state, thiskey, this_conds, this_t1s, this_zs
+                model, opt_state, thiskey, batch_conds, batch_t1s, batch_zs, data_sharding
             )
             train_loss_list.append(train_loss)
 
@@ -417,4 +462,5 @@ def train_model_from_config(
         tpc_r=config.experiment.tpc_r,
         radius_buffer=config.posrec.radius_buffer,
         use_best=config.training.use_best,
+        num_devices=config.training.num_devices,
     )

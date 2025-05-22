@@ -98,6 +98,7 @@ class TrainingConfig:
         curl_loss_multiplier: Coefficient for curl loss component.
         z_scale: Scaling factor for z dimension.
         multisteps_every_k: Steps for MultiSteps optimizer.
+        num_devices: Number of devices to use for data parallelization.
     """
 
     # Training process parameters
@@ -117,6 +118,9 @@ class TrainingConfig:
     curl_loss_multiplier: float = 1000.0
     z_scale: float = 5.0
     multisteps_every_k: int = 4
+    
+    # Distributed training parameters
+    num_devices: int = 1
 
 
 @dataclass

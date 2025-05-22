@@ -26,6 +26,16 @@ extract_t1 = 10.0  # End time for extract phase
 dt0 = 1.0  # Initial time step size
 
 [training]
+# Multi-GPU Training Support:
+# Set num_devices > 1 to enable data parallelization across multiple GPUs.
+# - num_devices=1: Single GPU training (default, backward compatible)
+# - num_devices=2+: Multi-GPU training with automatic data sharding
+# - For optimal performance: batch_size should be divisible by num_devices
+# - Memory efficient: full dataset stays in CPU, only batches go to GPU
+# - Example configs:
+#   * 4 GPUs: num_devices=4, batch_size=2048 (512 samples per GPU)
+#   * 2 GPUs: num_devices=2, batch_size=1024 (512 samples per GPU)
+
 # Training process parameters
 seed = 42  # Random seed for reproducibility
 learning_rate = 2e-3  # Initial learning rate (will be scheduled during training)
@@ -34,6 +44,9 @@ epochs = 100  # Number of training epochs
 
 # Data and batching parameters
 batch_size = 2048  # Training batch size (adjust based on GPU memory)
+num_devices = 1  # Number of GPUs for data parallelization
+                 # Examples: 1 (single GPU), 2 (dual GPU), 4 (quad GPU), 8 (octa GPU)
+                 # Note: batch_size should be divisible by num_devices for optimal performance
 n_samples = 16  # Number of samples per instance for likelihood estimation
 n_train = 200000  # Size of training set
 n_test = 20000  # Size of test/validation set
