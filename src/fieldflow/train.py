@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import numpy as np
+
 import optax
 from jax.scipy.interpolate import RegularGridInterpolator
 from jaxtyping import Array, PRNGKeyArray, PyTree
@@ -258,8 +258,9 @@ def train(
 ) -> tuple[eqx.Module, list, list]:
     """Train a continuous normalizing flow model.
 
-    This function implements the main training loop with batching, progress
-    tracking, and optional best model selection based on validation loss.
+    This function implements the main training loop with epoch-level data sharding
+    for optimal multi-GPU performance. Data is resharded once per epoch with
+    interleaved distribution across devices.
 
     Args:
         key: Random key for training
@@ -288,11 +289,11 @@ def train(
 
     # Set up device mesh for multi-GPU training
     devices = jax.devices()[:num_devices]
-    device_mesh = jax.sharding.Mesh(devices, ("data",))
+    device_mesh = jax.sharding.Mesh(devices, ("batch",))
 
-    # Create data sharding specification
-    data_sharding = jax.sharding.NamedSharding(
-        device_mesh, jax.sharding.PartitionSpec("data")
+    # Create batch sharding specification (batches distributed across devices)
+    batch_sharding = jax.sharding.NamedSharding(
+        device_mesh, jax.sharding.PartitionSpec("batch", None)
     )
 
     # Create replicated sharding specification
@@ -300,59 +301,64 @@ def train(
         device_mesh, jax.sharding.PartitionSpec()
     )
 
-    # Validate batch size and warn if not evenly divisible
+    # Calculate number of batches (may drop some samples for even distribution)
+    n_batches = n_train // n_batch
+    n_usable_samples = n_batches * n_batch
+
+    # Validate batch distribution and warn if needed
     if n_batch % num_devices != 0:
         warnings.warn(
             f"Batch size {n_batch} is not evenly divisible by num_devices "
-            f"{num_devices}. Some devices may process fewer samples per batch,"
-            f" which could lead to slightly uneven GPU utilization.",
+            f"{num_devices}. Some devices may process fewer samples per batch, "
+            f"which could lead to slightly uneven GPU utilization.",
             UserWarning,
             stacklevel=2,
         )
 
-    # Split data into train/test and convert training data to NumPy arrays
-    # This keeps the full dataset in CPU memory instead of GPU memory
-    cond_train_orig_np = np.asarray(conditions[:-n_test])
-    t1s_train_orig_np = np.asarray(t1s[:-n_test])
-    zs_train_orig_np = np.asarray(zs[:-n_test])
+    if n_usable_samples < n_train:
+        warnings.warn(
+            f"Dropping {n_train - n_usable_samples} samples to ensure even "
+            f"batch distribution ({n_usable_samples} samples used).",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Prepare training data (keep in JAX format)
+    cond_train = conditions[:-n_test]
+    t1s_train = t1s[:-n_test]
+    zs_train = zs[:-n_test]
 
     # Test data stays as JAX arrays since it's small
     cond_test = conditions[-n_test:]
     t1s_test = t1s[-n_test:]
     zs_test = zs[-n_test:]
 
-    n_data_loops = n_train // n_batch
-
     @eqx.filter_jit(donate="all")
     def make_step(
         model: eqx.Module,
         opt_state: PyTree,
         key: PRNGKeyArray,
-        conds: Array,
-        t1s: Array,
-        zs: Array,
-        sharding: jax.sharding.Sharding,
-        replicated: jax.sharding.Sharding,
+        batch_data: tuple[Array, Array, Array],
+        posrec_model: eqx.Module,
+        replicated_sharding: jax.sharding.Sharding,
     ) -> tuple[eqx.Module, PyTree, float]:
-        """Single training step with multi-device support."""
-        # Shard model and opt_state (replicated across all devices)
-        model_replicated, opt_state_replicated = eqx.filter_shard(
-            (model, opt_state), replicated
-        )
+        """Single training step with pre-sharded batch data."""
+        # Data is already sharded - extract batch components
+        batch_conds, batch_t1s, batch_zs = batch_data
 
-        # Shard data across devices
-        conds_sharded, t1s_sharded, zs_sharded = eqx.filter_shard(
-            (conds, t1s, zs), sharding
+        # Replicate model, opt_state, and posrec_model across all devices
+        model_replicated, opt_state_replicated, posrec_model_replicated = eqx.filter_shard(
+            (model, opt_state, posrec_model), replicated_sharding
         )
 
         # Compute loss and gradients (distributed across devices)
         loss_value, grads = eqx.filter_value_and_grad(loss_fn)(
             model_replicated,
             key,
-            conds_sharded,
-            t1s_sharded,
-            zs_sharded,
-            posrec_model,
+            batch_conds,
+            batch_t1s,
+            batch_zs,
+            posrec_model_replicated,
             civ_map,
             tpc_r,
             n_samples=n_samples,
@@ -367,7 +373,6 @@ def train(
         )
         model_new = eqx.apply_updates(model_replicated, updates)
 
-        # Return updated model and optimizer state
         return model_new, opt_state_new, loss_value
 
     # Training loop
@@ -392,40 +397,36 @@ def train(
     for _ in loop:
         key, thiskey = jax.random.split(key, 2)
 
-        # Generate permutation indices using JAX (deterministic)
-        indices_jax = jax.random.permutation(thiskey, jnp.arange(n_train))
-        # Convert to NumPy for CPU-based indexing
-        indices_np = np.array(indices_jax)
+        # Shuffle data for this epoch
+        indices = jax.random.permutation(thiskey, jnp.arange(n_train))
+        shuffled_conds = cond_train[indices]
+        shuffled_t1s = t1s_train[indices]
+        shuffled_zs = zs_train[indices]
 
-        # Use NumPy arrays for all data operations (stays in CPU)
-        cond_train_np = cond_train_orig_np[indices_np]
-        t1s_train_np = t1s_train_orig_np[indices_np]
-        zs_train_np = zs_train_orig_np[indices_np]
+        # Reshape to batch-first format: (n_batches, batch_size, ...)
+        epoch_conds = shuffled_conds[:n_usable_samples].reshape(n_batches, n_batch, -1)
+        epoch_t1s = shuffled_t1s[:n_usable_samples].reshape(n_batches, n_batch)
+        epoch_zs = shuffled_zs[:n_usable_samples].reshape(n_batches, n_batch)
 
-        # Training steps for this epoch
-        for j in range(n_data_loops):
+        # Shard data across devices once per epoch
+        # Each device gets a subset of batches
+        sharded_conds = jax.device_put(epoch_conds, batch_sharding)
+        sharded_t1s = jax.device_put(epoch_t1s, batch_sharding)
+        sharded_zs = jax.device_put(epoch_zs, batch_sharding)
+
+        # Training steps for this epoch - simple batch indexing
+        for j in range(n_batches):
             key, thiskey = jax.random.split(key, 2)
 
-            # Extract batch as NumPy arrays (stays in CPU)
-            batch_start = j * n_batch
-            batch_end = (j + 1) * n_batch
-            batch_conds_np = cond_train_np[batch_start:batch_end]
-            batch_t1s_np = t1s_train_np[batch_start:batch_end]
-            batch_zs_np = zs_train_np[batch_start:batch_end]
-
-            # Convert numpy to JAX arrays (let make_step handle sharding)
-            batch_conds = jnp.array(batch_conds_np)
-            batch_t1s = jnp.array(batch_t1s_np)
-            batch_zs = jnp.array(batch_zs_np)
+            # Extract batch - data is already sharded optimally
+            batch_data = (sharded_conds[j], sharded_t1s[j], sharded_zs[j])
 
             model, opt_state, train_loss = make_step(
                 model,
                 opt_state,
                 thiskey,
-                batch_conds,
-                batch_t1s,
-                batch_zs,
-                data_sharding,
+                batch_data,
+                posrec_model,
                 replicated_sharding,
             )
             train_loss_list.append(train_loss)
