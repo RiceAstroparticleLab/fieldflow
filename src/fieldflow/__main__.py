@@ -140,8 +140,7 @@ def main():
         # Create a dummy model with the right structure first
         dummy_model = create_model_from_config(config, subkey)
         # Then load the pretrained weights into it
-        with open(pretrained_path, "rb") as f:
-            model = eqx.tree_deserialise_leaves(f.read(), dummy_model)
+        model = eqx.tree_deserialise_leaves(pretrained_path, dummy_model)
     else:
         print("Creating new model from scratch")
         model = create_model_from_config(config, subkey)
