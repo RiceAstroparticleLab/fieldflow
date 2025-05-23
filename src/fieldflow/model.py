@@ -6,7 +6,6 @@ import diffrax  # https://github.com/patrick-kidger/diffrax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import PRNGKeyArray
 
 
 
@@ -134,7 +133,6 @@ class ContinuousNormalizingFlow(eqx.Module):
         stepsizecontroller (diffrax.AbstractStepSizeController): Controls
           adaptive stepping.
     """
-    key: PRNGKeyArray
     func_drift: eqx.Module
     data_size: int
     exact_logp: bool
@@ -161,7 +159,6 @@ class ContinuousNormalizingFlow(eqx.Module):
             stepsizecontroller = diffrax.ConstantStepSize()
         keys = jax.random.split(key, 2)
         super().__init__(**kwargs)
-        self.key = key
         self.func_drift = func(
             data_size=data_size,
             width_size=width_size,
@@ -199,12 +196,13 @@ class ContinuousNormalizingFlow(eqx.Module):
         (y,) = sol.ys
         return y
 
-    def transform_and_log_det(self, *, y, t1):
+    def transform_and_log_det(self, *, y, t1, key):
         """Transform data and compute log determinant of the transformation.
 
         Args:
             y (jnp.ndarray): Input data points to transform.
             t1 (float): Target time for the transformation.
+            key (jax.random.PRNGKey): Random key for stochastic operations.
 
         Returns:
             tuple: (transformed_y, log_determinant) where transformed_y is the
@@ -215,8 +213,7 @@ class ContinuousNormalizingFlow(eqx.Module):
             term = diffrax.ODETerm(exact_logp_wrapper)
         else:
             term = diffrax.ODETerm(approx_logp_wrapper)
-        self.key, subkey = jax.random.split(self.key)
-        eps = jax.random.normal(subkey, y.shape)
+        eps = jax.random.normal(key, y.shape)
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
@@ -234,12 +231,13 @@ class ContinuousNormalizingFlow(eqx.Module):
         (y,), (delta_log_likelihood,) = sol.ys
         return y, delta_log_likelihood
 
-    def inverse_and_log_det(self, *, y, t1):
+    def inverse_and_log_det(self, *, y, t1, key):
         """Apply inverse transformation and compute the log determinant.
 
         Args:
             y (jnp.ndarray): Input data points to inverse transform.
             t1 (float): Starting time for the inverse transformation.
+            key (jax.random.PRNGKey): Random key for stochastic operations.
 
         Returns:
             tuple: (inverse_y, log_determinant) where inverse_y is the inverse
@@ -250,8 +248,7 @@ class ContinuousNormalizingFlow(eqx.Module):
             term = diffrax.ODETerm(exact_logp_wrapper)
         else:
             term = diffrax.ODETerm(approx_logp_wrapper)
-        self.key, subkey = jax.random.split(self.key)
-        eps = jax.random.normal(subkey, y.shape)
+        eps = jax.random.normal(key, y.shape)
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)

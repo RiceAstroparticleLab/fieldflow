@@ -106,7 +106,7 @@ def single_likelihood_loss(
     Returns:
         Negative log-likelihood loss value
     """
-    keys = jax.random.split(key, 2)
+    keys = jax.random.split(key, 2 + n_samples)
 
     # Generate samples from position reconstruction flow
     samples = generate_samples_for_cnf(
@@ -120,8 +120,8 @@ def single_likelihood_loss(
 
     # Transform samples through CNF model
     transformed_samples, logdet = eqx.filter_vmap(
-        lambda y: model.transform_and_log_det(y=y, t1=t1)
-    )(samples)
+        lambda y, k: model.transform_and_log_det(y=y, t1=t1, key=k)
+    )(samples, keys[1:1+n_samples])
 
     # Compute radii of transformed samples
     sample_r = compute_r(transformed_samples)
@@ -147,7 +147,7 @@ def single_likelihood_loss(
 
     # Add curl penalty
     curl_penalty = curl_loss_multiplier * curl_loss(
-        keys[1], model, t1, transformed_samples[0]
+        keys[1 + n_samples], model, t1, transformed_samples[0]
     )
 
     return likelihood_loss_val + curl_penalty
