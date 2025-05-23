@@ -2,11 +2,10 @@
 Model definitions for continuous normalizing flow for electric field modeling.
 """
 
-import diffrax  # https://github.com/patrick-kidger/diffrax
+import diffrax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-
 
 
 def approx_logp_wrapper(t, y, args):
@@ -30,8 +29,10 @@ def approx_logp_wrapper(t, y, args):
     """
     y, _ = y
     *args, eps, func = args
+
     def fn(y):
         return func(t, y, args)
+
     f, vjp_fn = jax.vjp(fn, y)
     (eps_dfdy,) = vjp_fn(eps)
     logp = jnp.sum(eps_dfdy * eps)
@@ -56,8 +57,10 @@ def exact_logp_wrapper(t, y, args):
     """
     y, _ = y
     *args, _, func = args
+
     def fn(y):
         return func(t, y, args)
+
     f, vjp_fn = jax.vjp(fn, y)
     (size,) = y.shape  # this implementation only works for 1D input
     eye = jnp.eye(size)
@@ -70,6 +73,7 @@ class MLPFunc(eqx.Module):
     """Multilayer perceptron that models the drift function in
     a continuous normalizing flow.
     """
+
     layers: list[eqx.nn.Linear]
 
     def __init__(self, *, data_size, width_size, depth, key, **kwargs):
@@ -87,21 +91,19 @@ class MLPFunc(eqx.Module):
         layers = []
         # layers_t = []
         if depth == 0:
-            layers.append(
-                eqx.nn.Linear(data_size + 1, data_size, key=keys[0])
-                )
+            layers.append(eqx.nn.Linear(data_size + 1, data_size, key=keys[0]))
         else:
             layers.append(
                 eqx.nn.Linear(data_size + 1, width_size, key=keys[0])
-                )
+            )
             for i in range(depth - 1):
                 layers.append(
                     eqx.nn.Linear(width_size, width_size, key=keys[i + 1])
-                    )
+                )
             layers.append(eqx.nn.Linear(width_size, data_size, key=keys[-1]))
         self.layers = layers
 
-    def __call__(self, t, y):
+    def __call__(self, t, y, args):  # noqa: ARG002
         """Compute the drift (velocity) at given time and state.
 
         Args:
@@ -133,6 +135,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         stepsizecontroller (diffrax.AbstractStepSizeController): Controls
           adaptive stepping.
     """
+
     func_drift: eqx.Module
     data_size: int
     exact_logp: bool
@@ -154,7 +157,6 @@ class ContinuousNormalizingFlow(eqx.Module):
         dt0=1.0,
         **kwargs,
     ):
-
         if stepsizecontroller is None:
             stepsizecontroller = diffrax.ConstantStepSize()
         keys = jax.random.split(key, 2)
@@ -170,7 +172,6 @@ class ContinuousNormalizingFlow(eqx.Module):
         self.t0 = t0
         self.dt0 = dt0
         self.stepsizecontroller = stepsizecontroller
-        
 
     def transform(self, *, y, t1):
         """Transform data through the flow without computing log determinants.

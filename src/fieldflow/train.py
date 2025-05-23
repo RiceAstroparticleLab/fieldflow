@@ -62,7 +62,7 @@ def curl_loss(
     Returns:
         Curl penalty loss value
     """
-    jac_drift = jax.jacfwd(lambda a: model.func_drift(z, a))(x)
+    jac_drift = jax.jacfwd(lambda a: model.func_drift(z, a, 0.))(x)
 
     # For 2D vector field, curl is ∂fy/∂x - ∂fx/∂y
     curl_penalty = (jac_drift[1, 0] - jac_drift[0, 1]) ** 2
