@@ -6,6 +6,8 @@ import diffrax  # https://github.com/patrick-kidger/diffrax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jaxtyping import PRNGKeyArray
+
 
 
 def approx_logp_wrapper(t, y, args):
@@ -132,6 +134,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         stepsizecontroller (diffrax.AbstractStepSizeController): Controls
           adaptive stepping.
     """
+    key: PRNGKeyArray
     func_drift: eqx.Module
     data_size: int
     exact_logp: bool
@@ -159,7 +162,6 @@ class ContinuousNormalizingFlow(eqx.Module):
 
         self.key = key
         keys = jax.random.split(self.key, 2)
-        super().__init__(**kwargs)
         self.func_drift = func(
             data_size=data_size,
             width_size=width_size,
@@ -171,6 +173,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         self.t0 = t0
         self.dt0 = dt0
         self.stepsizecontroller = stepsizecontroller
+        super().__init__(**kwargs)
 
     def transform(self, *, y, t1):
         """Transform data through the flow without computing log determinants.
