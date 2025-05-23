@@ -59,9 +59,7 @@ def save_model(model, path):
         model: Trained model to save
         path: Output path for the saved model
     """
-    model_bytes = eqx.tree_serialise_leaves(model)
-    with open(path, "wb") as f:
-        f.write(model_bytes)
+    eqx.tree_serialise_leaves(path, model)
     print(f"Model saved to {path}")
 
 
