@@ -267,36 +267,3 @@ class ContinuousNormalizingFlow(eqx.Module):
         (y,), (delta_log_likelihood,) = sol.ys
 
         return y, delta_log_likelihood
-
-
-def create_model_from_config(config, key):
-    """Create a CNF model from configuration.
-
-    Args:
-        config: Configuration object containing model parameters
-        key: JAX PRNG key for model initialization
-
-    Returns:
-        Initialized ContinuousNormalizingFlow model
-    """
-    # Create step size controller based on config
-    if config.model.use_pid_controller:
-        step_size_controller = diffrax.PIDController(
-            rtol=config.model.rtol,
-            atol=config.model.atol,
-            dtmax=config.model.dtmax,
-        )
-    else:
-        step_size_controller = diffrax.ConstantStepSize()
-
-    # Create and return model
-    return ContinuousNormalizingFlow(
-        data_size=config.model.data_size,
-        exact_logp=config.model.exact_logp,
-        width_size=config.model.width_size,
-        depth=config.model.depth,
-        key=key,
-        stepsizecontroller=step_size_controller,
-        t0=config.model.t0,
-        dt0=config.model.dt0,
-        )

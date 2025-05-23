@@ -292,7 +292,7 @@ def train(
 
     # Create batch sharding specification (batches distributed across devices)
     batch_sharding = jax.sharding.NamedSharding(
-        device_mesh, jax.sharding.PartitionSpec("batch", None)
+        device_mesh, jax.sharding.PartitionSpec(None, "batch")
     )
 
     # Create replicated sharding specification
@@ -337,13 +337,9 @@ def train(
     t1s_test_batched = t1s_test.reshape(1, n_test)
     zs_test_batched = zs_test.reshape(1, n_test)
 
-    # Shard test data across devices (treat as one big batch)
-    test_data_sharding = jax.sharding.NamedSharding(
-        device_mesh, jax.sharding.PartitionSpec("batch", None)
-    )
-    cond_test_sharded = jax.device_put(cond_test_batched, test_data_sharding)
-    t1s_test_sharded = jax.device_put(t1s_test_batched, test_data_sharding)
-    zs_test_sharded = jax.device_put(zs_test_batched, test_data_sharding)
+    cond_test_sharded = jax.device_put(cond_test_batched, batch_sharding)
+    t1s_test_sharded = jax.device_put(t1s_test_batched, batch_sharding)
+    zs_test_sharded = jax.device_put(zs_test_batched, batch_sharding)
 
     # Shard model, optimizer state, and posrec_model once (replicated)
     model_sharded = eqx.filter_shard(model, replicated_sharding)
@@ -530,14 +526,3 @@ def train_model_from_config(
         use_best=config.training.use_best,
         num_devices=config.training.num_devices,
     )
-
-
-def save_model(model, path):
-    """Save model to disk.
-
-    Args:
-        model: Trained model to save
-        path: Output path for the saved model
-    """
-    eqx.tree_serialise_leaves(path, model)
-    print(f"Model saved to {path}")

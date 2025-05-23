@@ -8,14 +8,59 @@ import argparse
 import os
 from pathlib import Path
 
+import diffrax
 import equinox as eqx
 import jax
 
 from fieldflow.config import load_config
 from fieldflow.dataloader import load_data_from_config
-from fieldflow.model import create_model_from_config
+from fieldflow.model import ContinuousNormalizingFlow
 from fieldflow.posrec import posrec_flow
-from fieldflow.train import save_model, train_model_from_config
+from fieldflow.train import train_model_from_config
+
+
+def create_model_from_config(config, key):
+    """Create a CNF model from configuration.
+
+    Args:
+        config: Configuration object containing model parameters
+        key: JAX PRNG key for model initialization
+
+    Returns:
+        Initialized ContinuousNormalizingFlow model
+    """
+    # Create step size controller based on config
+    if config.model.use_pid_controller:
+        step_size_controller = diffrax.PIDController(
+            rtol=config.model.rtol,
+            atol=config.model.atol,
+            dtmax=config.model.dtmax,
+        )
+    else:
+        step_size_controller = diffrax.ConstantStepSize()
+
+    # Create and return model
+    return ContinuousNormalizingFlow(
+        data_size=config.model.data_size,
+        exact_logp=config.model.exact_logp,
+        width_size=config.model.width_size,
+        depth=config.model.depth,
+        key=key,
+        stepsizecontroller=step_size_controller,
+        t0=config.model.t0,
+        dt0=config.model.dt0,
+    )
+
+
+def save_model(model, path):
+    """Save model to disk.
+
+    Args:
+        model: Trained model to save
+        path: Output path for the saved model
+    """
+    eqx.tree_serialise_leaves(path, model)
+    print(f"Model saved to {path}")
 
 
 def main():
