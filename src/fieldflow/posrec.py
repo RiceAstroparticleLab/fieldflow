@@ -126,7 +126,7 @@ def posrec_flow(pretrained_posrec_flow_path, config: "Config"):
         interval=config.posrec.spline_interval,
     )
 
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     key, flow_key = jax.random.split(key, 2)
 
     posrec_model = coupling_flow(

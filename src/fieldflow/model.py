@@ -84,7 +84,7 @@ class MLPFunc(eqx.Module):
             width_size (int): Hidden layer width. Ignored if depth=0.
             depth (int): Number of hidden layers. If 0, creates a single linear
               layer.
-            key (jax.random.PRNGKey): Random key for parameter initialization.
+            key (jax.random.key): Random key for parameter initialization.
         """
         super().__init__(**kwargs)
         keys = jax.random.split(key, depth + 1)
@@ -203,7 +203,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         Args:
             y (jnp.ndarray): Input data points to transform.
             t1 (float): Target time for the transformation.
-            key (jax.random.PRNGKey): Random key for stochastic operations.
+            key (jax.random.key): Random key for stochastic operations.
 
         Returns:
             tuple: (transformed_y, log_determinant) where transformed_y is the
@@ -238,7 +238,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         Args:
             y (jnp.ndarray): Input data points to inverse transform.
             t1 (float): Starting time for the inverse transformation.
-            key (jax.random.PRNGKey): Random key for stochastic operations.
+            key (jax.random.key): Random key for stochastic operations.
 
         Returns:
             tuple: (inverse_y, log_determinant) where inverse_y is the inverse

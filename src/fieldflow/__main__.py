@@ -113,7 +113,7 @@ def main():
         )
 
     # Initialize random key
-    key = jax.random.PRNGKey(config.training.seed)
+    key = jax.random.key(config.training.seed)
     key, subkey = jax.random.split(key)
 
     # Load data
