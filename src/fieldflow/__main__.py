@@ -77,7 +77,7 @@ def main():
     parser.add_argument(
         "--hitpatterns", help="Path to hitpatterns data file (.npz)"
     )
-    parser.add_argument("--civ-map", help="Path to CIV map file (.json.gz)")
+    parser.add_argument("--civ-map", help="Path to CIV map file (.npz)")
     parser.add_argument(
         "--posrec-model",
         help="Path to pretrained position reconstruction model (.eqx)",
