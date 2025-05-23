@@ -332,13 +332,18 @@ def train(
     t1s_test = t1s[-n_test:]
     zs_test = zs[-n_test:]
 
+    # Reshape test data to batch-first format: (1, n_test, ...)
+    cond_test_batched = cond_test.reshape(1, n_test, -1)
+    t1s_test_batched = t1s_test.reshape(1, n_test)
+    zs_test_batched = zs_test.reshape(1, n_test)
+
     # Shard test data across devices (treat as one big batch)
     test_data_sharding = jax.sharding.NamedSharding(
         device_mesh, jax.sharding.PartitionSpec("batch", None)
     )
-    cond_test_sharded = jax.device_put(cond_test, test_data_sharding)
-    t1s_test_sharded = jax.device_put(t1s_test, test_data_sharding)
-    zs_test_sharded = jax.device_put(zs_test, test_data_sharding)
+    cond_test_sharded = jax.device_put(cond_test_batched, test_data_sharding)
+    t1s_test_sharded = jax.device_put(t1s_test_batched, test_data_sharding)
+    zs_test_sharded = jax.device_put(zs_test_batched, test_data_sharding)
 
     # Shard model, optimizer state, and posrec_model once (replicated)
     model_sharded = eqx.filter_shard(model, replicated_sharding)
@@ -389,9 +394,9 @@ def train(
         loss_fn(
             model_sharded,
             key,
-            cond_test_sharded,
-            t1s_test_sharded,
-            zs_test_sharded,
+            cond_test_sharded[0],
+            t1s_test_sharded[0],
+            zs_test_sharded[0],
             posrec_model_sharded,
             civ_map,
             tpc_r,
@@ -452,9 +457,9 @@ def train(
         test_loss = loss_fn(
             model_sharded,
             key,
-            cond_test_sharded,
-            t1s_test_sharded,
-            zs_test_sharded,
+            cond_test_sharded[0],
+            t1s_test_sharded[0],
+            zs_test_sharded[0],
             posrec_model_sharded,
             civ_map,
             tpc_r,
