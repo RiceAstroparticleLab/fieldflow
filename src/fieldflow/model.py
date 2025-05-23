@@ -159,9 +159,9 @@ class ContinuousNormalizingFlow(eqx.Module):
 
         if stepsizecontroller is None:
             stepsizecontroller = diffrax.ConstantStepSize()
-
+        keys = jax.random.split(key, 2)
+        super().__init__(**kwargs)
         self.key = key
-        keys = jax.random.split(self.key, 2)
         self.func_drift = func(
             data_size=data_size,
             width_size=width_size,
@@ -173,7 +173,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         self.t0 = t0
         self.dt0 = dt0
         self.stepsizecontroller = stepsizecontroller
-        super().__init__(**kwargs)
+        
 
     def transform(self, *, y, t1):
         """Transform data through the flow without computing log determinants.
