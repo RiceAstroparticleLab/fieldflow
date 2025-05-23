@@ -295,6 +295,11 @@ def train(
         device_mesh, jax.sharding.PartitionSpec("data")
     )
 
+    # Create replicated sharding specification
+    replicated_sharding = jax.sharding.NamedSharding(
+        device_mesh, jax.sharding.PartitionSpec()
+    )
+
     # Validate batch size and warn if not evenly divisible
     if n_batch % num_devices != 0:
         warnings.warn(
@@ -327,11 +332,9 @@ def train(
         t1s: Array,
         zs: Array,
         sharding: jax.sharding.Sharding,
+        replicated: jax.sharding.Sharding,
     ) -> tuple[eqx.Module, PyTree, float]:
         """Single training step with multi-device support."""
-        # Generate replicated sharding from data sharding
-        replicated = sharding.replicate()
-
         # Shard model and opt_state (replicated across all devices)
         model_replicated, opt_state_replicated = eqx.filter_shard(
             (model, opt_state), replicated
@@ -423,6 +426,7 @@ def train(
                 batch_t1s,
                 batch_zs,
                 data_sharding,
+                replicated_sharding,
             )
             train_loss_list.append(train_loss)
 
