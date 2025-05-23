@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-
 import optax
 from jax.scipy.interpolate import RegularGridInterpolator
 from jaxtyping import Array, PRNGKeyArray, PyTree
@@ -258,9 +257,9 @@ def train(
 ) -> tuple[eqx.Module, list, list]:
     """Train a continuous normalizing flow model.
 
-    This function implements the main training loop with epoch-level data sharding
-    for optimal multi-GPU performance. Data is resharded once per epoch with
-    interleaved distribution across devices.
+    This function implements the main training loop with epoch-level data
+    sharding for optimal multi-GPU performance. Data is resharded once per
+    epoch with batch-first distribution across devices.
 
     Args:
         key: Random key for training
@@ -309,8 +308,8 @@ def train(
     if n_batch % num_devices != 0:
         warnings.warn(
             f"Batch size {n_batch} is not evenly divisible by num_devices "
-            f"{num_devices}. Some devices may process fewer samples per batch, "
-            f"which could lead to slightly uneven GPU utilization.",
+            f"{num_devices}. Some devices may process fewer samples per "
+            f"batch, which could lead to slightly uneven GPU utilization.",
             UserWarning,
             stacklevel=2,
         )
@@ -328,37 +327,44 @@ def train(
     t1s_train = t1s[:-n_test]
     zs_train = zs[:-n_test]
 
-    # Test data stays as JAX arrays since it's small
+    # Test data - shard once as a single large batch across devices
     cond_test = conditions[-n_test:]
     t1s_test = t1s[-n_test:]
     zs_test = zs[-n_test:]
 
-    @eqx.filter_jit(donate="all")
+    # Shard test data across devices (treat as one big batch)
+    test_data_sharding = jax.sharding.NamedSharding(
+        device_mesh, jax.sharding.PartitionSpec("batch", None)
+    )
+    cond_test_sharded = jax.device_put(cond_test, test_data_sharding)
+    t1s_test_sharded = jax.device_put(t1s_test, test_data_sharding)
+    zs_test_sharded = jax.device_put(zs_test, test_data_sharding)
+
+    # Shard model, optimizer state, and posrec_model once (replicated)
+    model_sharded = eqx.filter_shard(model, replicated_sharding)
+    opt_state_sharded = eqx.filter_shard(opt_state, replicated_sharding)
+    posrec_model_sharded = eqx.filter_shard(posrec_model, replicated_sharding)
+
+    @eqx.filter_jit
     def make_step(
         model: eqx.Module,
         opt_state: PyTree,
         key: PRNGKeyArray,
         batch_data: tuple[Array, Array, Array],
         posrec_model: eqx.Module,
-        replicated_sharding: jax.sharding.Sharding,
     ) -> tuple[eqx.Module, PyTree, float]:
         """Single training step with pre-sharded batch data."""
-        # Data is already sharded - extract batch components
+        # Data and models are already sharded - extract batch components
         batch_conds, batch_t1s, batch_zs = batch_data
-
-        # Replicate model, opt_state, and posrec_model across all devices
-        model_replicated, opt_state_replicated, posrec_model_replicated = eqx.filter_shard(
-            (model, opt_state, posrec_model), replicated_sharding
-        )
 
         # Compute loss and gradients (distributed across devices)
         loss_value, grads = eqx.filter_value_and_grad(loss_fn)(
-            model_replicated,
+            model,
             key,
             batch_conds,
             batch_t1s,
             batch_zs,
-            posrec_model_replicated,
+            posrec_model,
             civ_map,
             tpc_r,
             n_samples=n_samples,
@@ -368,10 +374,10 @@ def train(
         # Update model (gradients automatically aggregated across devices)
         updates, opt_state_new = optim.update(
             grads,
-            opt_state_replicated,
-            eqx.filter(model_replicated, eqx.is_array),
+            opt_state,
+            eqx.filter(model, eqx.is_array),
         )
-        model_new = eqx.apply_updates(model_replicated, updates)
+        model_new = eqx.apply_updates(model, updates)
 
         return model_new, opt_state_new, loss_value
 
@@ -381,12 +387,12 @@ def train(
     train_loss_list = []
     test_loss_list = [
         loss_fn(
-            model,
+            model_sharded,
             key,
-            cond_test,
-            t1s_test,
-            zs_test,
-            posrec_model,
+            cond_test_sharded,
+            t1s_test_sharded,
+            zs_test_sharded,
+            posrec_model_sharded,
             civ_map,
             tpc_r,
             n_samples=n_samples,
@@ -404,7 +410,9 @@ def train(
         shuffled_zs = zs_train[indices]
 
         # Reshape to batch-first format: (n_batches, batch_size, ...)
-        epoch_conds = shuffled_conds[:n_usable_samples].reshape(n_batches, n_batch, -1)
+        epoch_conds = shuffled_conds[:n_usable_samples].reshape(
+            n_batches, n_batch, -1
+            )
         epoch_t1s = shuffled_t1s[:n_usable_samples].reshape(n_batches, n_batch)
         epoch_zs = shuffled_zs[:n_usable_samples].reshape(n_batches, n_batch)
 
@@ -421,13 +429,12 @@ def train(
             # Extract batch - data is already sharded optimally
             batch_data = (sharded_conds[j], sharded_t1s[j], sharded_zs[j])
 
-            model, opt_state, train_loss = make_step(
-                model,
-                opt_state,
+            model_sharded, opt_state_sharded, train_loss = make_step(
+                model_sharded,
+                opt_state_sharded,
                 thiskey,
                 batch_data,
-                posrec_model,
-                replicated_sharding,
+                posrec_model_sharded,
             )
             train_loss_list.append(train_loss)
 
@@ -441,20 +448,23 @@ def train(
                 }
             )
 
-        # Evaluate on test set
+        # Evaluate on test set using sharded models and test data
         test_loss = loss_fn(
-            model,
+            model_sharded,
             key,
-            cond_test,
-            t1s_test,
-            zs_test,
-            posrec_model,
+            cond_test_sharded,
+            t1s_test_sharded,
+            zs_test_sharded,
+            posrec_model_sharded,
             civ_map,
             tpc_r,
             n_samples=n_samples,
             radius_buffer=radius_buffer,
         )
         test_loss_list.append(test_loss)
+
+        # Update unsharded model for best model tracking
+        model = eqx.filter_shard(model_sharded, replicated_sharding)
 
         # Track best model
         if jnp.argmin(jnp.array(test_loss_list)) == len(test_loss_list) - 1:
