@@ -91,6 +91,7 @@ class TrainingConfig:
         weight_decay: L2 regularization parameter.
         epochs: Number of training epochs.
         batch_size: Batch size for training.
+        enable_scheduler: Whether to enable learning rate scheduling.
         n_samples: Number of samples per instance for likelihood estimation.
         n_train: Size of training set.
         n_test: Size of test/validation set.
@@ -107,6 +108,7 @@ class TrainingConfig:
     weight_decay: float = 1e-4
     epochs: int = 100
     batch_size: int = 2048
+    enable_scheduler: bool = True
 
     # Data and sampling parameters
     n_samples: int = 16

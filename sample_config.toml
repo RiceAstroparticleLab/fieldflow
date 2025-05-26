@@ -41,6 +41,9 @@ seed = 42  # Random seed for reproducibility
 learning_rate = 2e-3  # Initial learning rate (will be scheduled during training)
 weight_decay = 1e-4  # L2 regularization parameter
 epochs = 100  # Number of training epochs
+enable_scheduler = true  # Enable learning rate scheduling for training from scratch
+                        # When false, uses constant LR = learning_rate * 0.01
+                        # Set to false when loading pretrained models to continue training
 
 # Data and batching parameters
 batch_size = 2048  # Training batch size (adjust based on GPU memory)

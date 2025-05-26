@@ -210,14 +210,22 @@ def create_optimizer(config: "Config") -> optax.GradientTransformation:
         Configured optax optimizer
     """
     # Create learning rate schedule
-    optax_sched = optax.join_schedules(
-        [
-            optax.constant_schedule(config.training.learning_rate),
-            optax.constant_schedule(config.training.learning_rate * 0.1),
-            optax.constant_schedule(config.training.learning_rate * 0.01),
-        ],
-        [25, 30],
-    )
+    if config.training.enable_scheduler:
+        # Use standard 3-phase schedule for training from scratch
+        optax_sched = optax.join_schedules(
+            [
+                optax.constant_schedule(config.training.learning_rate),
+                optax.constant_schedule(config.training.learning_rate * 0.1),
+                optax.constant_schedule(config.training.learning_rate * 0.01),
+            ],
+            [25, 30],
+        )
+    else:
+        # Use constant learning rate at final scheduled value
+        # for continued training
+        optax_sched = optax.constant_schedule(
+            config.training.learning_rate * 0.01
+        )
 
     # Create base optimizer
     optimizer = optax.adamw(
