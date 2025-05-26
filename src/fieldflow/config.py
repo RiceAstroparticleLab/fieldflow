@@ -100,6 +100,8 @@ class TrainingConfig:
         z_scale: Scaling factor for z dimension.
         multisteps_every_k: Steps for MultiSteps optimizer.
         num_devices: Number of devices to use for data parallelization.
+        save_iter: Every n number of epochs to save the model
+        save_file_name: Path and file name start (/path/to/model_name)
     """
 
     # Training process parameters
@@ -124,6 +126,9 @@ class TrainingConfig:
     # Distributed training parameters
     num_devices: int = 1
 
+    # Model saving
+    save_iter: int = 10
+    save_file_name: str = 'model'
 
 @dataclass
 class ExperimentConfig:
