@@ -426,7 +426,7 @@ def train(
             radius_buffer=radius_buffer,
         )
     ]
-
+    best_epoch = 0
     for epoch in loop:
         key, thiskey = jax.random.split(key, 2)
 
@@ -496,6 +496,7 @@ def train(
         # Track best model
         if jnp.argmin(jnp.array(test_loss_list)) == len(test_loss_list) - 1:
             best_model = model
+            best_epoch = epoch
 
         if epoch%save_iter == 0:
             save_model(model, f"{output_path}{save_file_name}_{epoch}.eqx")
@@ -503,7 +504,7 @@ def train(
     if use_best:
         model = best_model
 
-    return model, train_loss_list, test_loss_list
+    return model, train_loss_list, test_loss_list, best_epoch
 
 
 def train_model_from_config(

@@ -139,12 +139,13 @@ def main():
     if not output_path.endswith("/"):
         output_path += "/"
         config.training.output_path = output_path
+    
     # Create output directory if it doesn't exist
     os.makedirs(output_path, exist_ok=True)
 
     # Train model
     print("Starting training...")
-    trained_model, train_losses, test_losses = train_model_from_config(
+    trained_model, train_losses, test_losses, best_epoch = train_model_from_config(
         key=key,
         model=model,
         conditions=cond_sel,
@@ -156,7 +157,7 @@ def main():
     )
 
     # Save model, train, and test losses
-    save_model(trained_model, f"{output_path}model.eqx")
+    save_model(trained_model, f"{output_path}best_model_epoch_{best_epoch}.eqx")
     jax.numpy.savez(f"{output_path}train_losses.npz", train_losses=train_losses)
     jax.numpy.savez(f"{output_path}test_losses.npz", test_losses=test_losses)
     print(f"Training complete. Final test loss: {test_losses[-1]:.6f}")
