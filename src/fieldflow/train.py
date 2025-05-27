@@ -273,7 +273,7 @@ def train(
     radius_buffer: float = 20.0,
     use_best: bool = False,
     save_iter: int = 1,
-    save_file_name: str = 'model',
+    save_file_name: str = "model",
     loss_fn: Callable = likelihood_loss,
     num_devices: int = 1,
 ) -> tuple[eqx.Module, list, list]:
@@ -494,11 +494,11 @@ def train(
         if jnp.argmin(jnp.array(test_loss_list)) == len(test_loss_list) - 1:
             best_model = model
 
+        if epoch%save_iter == 0:
+            save_model(model, f"{save_file_name}_{epoch}.eqx")
+
     if use_best:
         model = best_model
-    
-    if epoch%save_iter == 0:
-        save_model(model, f'{save_file_name}_{epoch}.eqx')
 
     return model, train_loss_list, test_loss_list
 
