@@ -303,7 +303,7 @@ def train(
         use_best: Whether to return best model based on validation loss
         save_iter: Every n number of epochs to save the model
         save_file_name: Name of the file to save the model, default is "model"
-        output_path: Path to directory for saving model
+        output_path: Path to directory for saving model, default is current directory
         loss_fn: Loss function to use
         num_devices: Number of devices to use for data parallelization
 
@@ -516,6 +516,7 @@ def train_model_from_config(
     posrec_model: eqx.Module,
     civ_map: RegularGridInterpolator,
     config: "Config",
+    output_path: str = "",
 ) -> tuple[eqx.Module, list, list]:
     """Train model using configuration parameters.
 
@@ -531,6 +532,7 @@ def train_model_from_config(
         posrec_model: Pretrained position reconstruction model
         civ_map: Charge-in-volume survival probability map
         config: Configuration object
+        output_path: Path to directory for saving model, default is current directory
 
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)
@@ -556,6 +558,6 @@ def train_model_from_config(
         use_best=config.training.use_best,
         save_iter=config.training.save_iter,
         save_file_name=config.training.save_file_name,
-        output_path=config.training.output_path,
+        output_path=output_path,
         num_devices=config.training.num_devices,
     )

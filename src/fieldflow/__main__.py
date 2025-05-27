@@ -134,11 +134,9 @@ def main():
         print("Creating new model from scratch")
         model = create_model_from_config(config, subkey)
 
-    # Ensure that output path ends with a slash
-    output_path = config.training.output_path or output_path
-    if not output_path.endswith("/"):
+    # Ensure that output path ends with a slash, if it's not empty
+    if len(output_path)!=0 and not output_path.endswith("/"):
         output_path += "/"
-        config.training.output_path = output_path
     
     # Create output directory if it doesn't exist
     os.makedirs(output_path, exist_ok=True)
@@ -154,6 +152,7 @@ def main():
         posrec_model=posrec_model,
         civ_map=civ_map,
         config=config,
+        output_path=output_path,
     )
 
     # Save model, train, and test losses
