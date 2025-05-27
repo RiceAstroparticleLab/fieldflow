@@ -274,6 +274,7 @@ def train(
     use_best: bool = False,
     save_iter: int = 1,
     save_file_name: str = "model",
+    output_path: str = "",
     loss_fn: Callable = likelihood_loss,
     num_devices: int = 1,
 ) -> tuple[eqx.Module, list, list]:
@@ -301,6 +302,8 @@ def train(
         radius_buffer: Buffer for predictions beyond TPC radius
         use_best: Whether to return best model based on validation loss
         save_iter: Every n number of epochs to save the model
+        save_file_name: Name of the file to save the model, default is "model"
+        output_path: Path to directory for saving, default current directory
         loss_fn: Loss function to use
         num_devices: Number of devices to use for data parallelization
 
@@ -423,7 +426,7 @@ def train(
             radius_buffer=radius_buffer,
         )
     ]
-
+    best_epoch = 0
     for epoch in loop:
         key, thiskey = jax.random.split(key, 2)
 
@@ -493,14 +496,15 @@ def train(
         # Track best model
         if jnp.argmin(jnp.array(test_loss_list)) == len(test_loss_list) - 1:
             best_model = model
+            best_epoch = epoch
 
         if epoch%save_iter == 0:
-            save_model(model, f"{save_file_name}_{epoch}.eqx")
+            save_model(model, f"{output_path}{save_file_name}_{epoch}.eqx")
 
     if use_best:
         model = best_model
 
-    return model, train_loss_list, test_loss_list
+    return model, train_loss_list, test_loss_list, best_epoch
 
 
 def train_model_from_config(
@@ -512,6 +516,7 @@ def train_model_from_config(
     posrec_model: eqx.Module,
     civ_map: RegularGridInterpolator,
     config: "Config",
+    output_path: str = "",
 ) -> tuple[eqx.Module, list, list]:
     """Train model using configuration parameters.
 
@@ -527,6 +532,7 @@ def train_model_from_config(
         posrec_model: Pretrained position reconstruction model
         civ_map: Charge-in-volume survival probability map
         config: Configuration object
+        output_path: Path to directory for saving, default is current directory
 
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)
@@ -552,5 +558,6 @@ def train_model_from_config(
         use_best=config.training.use_best,
         save_iter=config.training.save_iter,
         save_file_name=config.training.save_file_name,
+        output_path=output_path,
         num_devices=config.training.num_devices,
     )
