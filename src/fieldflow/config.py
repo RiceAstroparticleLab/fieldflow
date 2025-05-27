@@ -128,7 +128,7 @@ class TrainingConfig:
 
     # Model saving
     save_iter: int = 10
-    save_file_name: str = 'model'
+    save_file_name: str = "model"
 
 @dataclass
 class ExperimentConfig:
