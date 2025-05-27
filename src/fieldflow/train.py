@@ -243,6 +243,18 @@ def create_optimizer(config: "Config") -> optax.GradientTransformation:
     return optimizer
 
 
+def save_model(model, path):
+    """Save model to disk.
+
+    Args:
+        model: Trained model to save
+        path: Output path for the saved model
+    """
+    eqx.tree_serialise_leaves(path, model)
+    print(f"Model saved to {path}")
+
+
+
 def train(
     key: PRNGKeyArray,
     model: eqx.Module,
@@ -260,6 +272,8 @@ def train(
     tpc_r: float,
     radius_buffer: float = 20.0,
     use_best: bool = False,
+    save_iter: int = 1,
+    save_file_name: str = 'model',
     loss_fn: Callable = likelihood_loss,
     num_devices: int = 1,
 ) -> tuple[eqx.Module, list, list]:
@@ -286,6 +300,7 @@ def train(
         tpc_r: TPC radius for boundary constraints
         radius_buffer: Buffer for predictions beyond TPC radius
         use_best: Whether to return best model based on validation loss
+        save_iter: Every n number of epochs to save the model
         loss_fn: Loss function to use
         num_devices: Number of devices to use for data parallelization
 
@@ -409,7 +424,7 @@ def train(
         )
     ]
 
-    for _ in loop:
+    for epoch in loop:
         key, thiskey = jax.random.split(key, 2)
 
         # Shuffle data for this epoch
@@ -481,6 +496,9 @@ def train(
 
     if use_best:
         model = best_model
+    
+    if epoch%save_iter == 0:
+        save_model(model, f'{save_file_name}_{epoch}.eqx')
 
     return model, train_loss_list, test_loss_list
 
@@ -532,5 +550,7 @@ def train_model_from_config(
         tpc_r=config.experiment.tpc_r,
         radius_buffer=config.posrec.radius_buffer,
         use_best=config.training.use_best,
+        save_iter=config.training.save_iter,
+        save_file_name=config.training.save_file_name,
         num_devices=config.training.num_devices,
     )

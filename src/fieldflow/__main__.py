@@ -16,7 +16,7 @@ from fieldflow.config import load_config
 from fieldflow.dataloader import load_data_from_config
 from fieldflow.model import ContinuousNormalizingFlow
 from fieldflow.posrec import posrec_flow
-from fieldflow.train import train_model_from_config
+from fieldflow.train import save_model, train_model_from_config
 
 
 def create_model_from_config(config, key):
@@ -50,17 +50,6 @@ def create_model_from_config(config, key):
         t0=config.model.t0,
         dt0=config.model.dt0,
     )
-
-
-def save_model(model, path):
-    """Save model to disk.
-
-    Args:
-        model: Trained model to save
-        path: Output path for the saved model
-    """
-    eqx.tree_serialise_leaves(path, model)
-    print(f"Model saved to {path}")
 
 
 def main():
