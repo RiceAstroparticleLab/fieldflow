@@ -303,7 +303,7 @@ def train(
         use_best: Whether to return best model based on validation loss
         save_iter: Every n number of epochs to save the model
         save_file_name: Name of the file to save the model, default is "model"
-        output_path: Path to directory for saving model, default is current directory
+        output_path: Path to directory for saving, default current directory
         loss_fn: Loss function to use
         num_devices: Number of devices to use for data parallelization
 
@@ -532,7 +532,7 @@ def train_model_from_config(
         posrec_model: Pretrained position reconstruction model
         civ_map: Charge-in-volume survival probability map
         config: Configuration object
-        output_path: Path to directory for saving model, default is current directory
+        output_path: Path to directory for saving, default is current directory
 
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)

@@ -60,9 +60,7 @@ def main():
         "--pretrained",
         help="Path to pretrained model for fine-tuning (optional)",
     )
-    parser.add_argument(
-        "--output", help="Output directory for trained model and train/test losses (default: current directory)"
-    )
+    parser.add_argument("--output", help="Output directory")
     parser.add_argument(
         "--hitpatterns", help="Path to hitpatterns data file (.npz)"
     )
@@ -135,30 +133,37 @@ def main():
         model = create_model_from_config(config, subkey)
 
     # Ensure that output path ends with a slash, if it's not empty
-    if len(output_path)!=0 and not output_path.endswith("/"):
+    if len(output_path) != 0 and not output_path.endswith("/"):
         output_path += "/"
-    
+
     # Create output directory if it doesn't exist
     os.makedirs(output_path, exist_ok=True)
 
     # Train model
     print("Starting training...")
-    trained_model, train_losses, test_losses, best_epoch = train_model_from_config(
-        key=key,
-        model=model,
-        conditions=cond_sel,
-        t1s=z_sel_scaled,
-        zs=z_sel,
-        posrec_model=posrec_model,
-        civ_map=civ_map,
-        config=config,
-        output_path=output_path,
+    trained_model, train_losses, test_losses, best_epoch = (
+        train_model_from_config(
+            key=key,
+            model=model,
+            conditions=cond_sel,
+            t1s=z_sel_scaled,
+            zs=z_sel,
+            posrec_model=posrec_model,
+            civ_map=civ_map,
+            config=config,
+            output_path=output_path,
+        )
     )
 
     # Save model, train, and test losses
     save_file_name = config.training.save_file_name
-    save_model(trained_model, f"{output_path}best_{save_file_name}_epoch_{best_epoch}.eqx")
-    jax.numpy.savez(f"{output_path}train_losses.npz", train_losses=train_losses)
+    save_model(
+        trained_model,
+        f"{output_path}best_{save_file_name}_epoch_{best_epoch}.eqx",
+    )
+    jax.numpy.savez(
+        f"{output_path}train_losses.npz", train_losses=train_losses
+    )
     jax.numpy.savez(f"{output_path}test_losses.npz", test_losses=test_losses)
     print(f"Training complete. Final test loss: {test_losses[-1]:.6f}")
 
