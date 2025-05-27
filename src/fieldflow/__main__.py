@@ -156,7 +156,8 @@ def main():
     )
 
     # Save model, train, and test losses
-    save_model(trained_model, f"{output_path}best_model_epoch_{best_epoch}.eqx")
+    save_file_name = config.training.save_file_name
+    save_model(trained_model, f"{output_path}best_{save_file_name}_epoch_{best_epoch}.eqx")
     jax.numpy.savez(f"{output_path}train_losses.npz", train_losses=train_losses)
     jax.numpy.savez(f"{output_path}test_losses.npz", test_losses=test_losses)
     print(f"Training complete. Final test loss: {test_losses[-1]:.6f}")
