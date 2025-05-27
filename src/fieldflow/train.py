@@ -274,6 +274,7 @@ def train(
     use_best: bool = False,
     save_iter: int = 1,
     save_file_name: str = "model",
+    output_path: str = "",
     loss_fn: Callable = likelihood_loss,
     num_devices: int = 1,
 ) -> tuple[eqx.Module, list, list]:
@@ -301,6 +302,8 @@ def train(
         radius_buffer: Buffer for predictions beyond TPC radius
         use_best: Whether to return best model based on validation loss
         save_iter: Every n number of epochs to save the model
+        save_file_name: Name of the file to save the model, default is "model"
+        output_path: Path to directory for saving model
         loss_fn: Loss function to use
         num_devices: Number of devices to use for data parallelization
 
@@ -495,7 +498,7 @@ def train(
             best_model = model
 
         if epoch%save_iter == 0:
-            save_model(model, f"{save_file_name}_{epoch}.eqx")
+            save_model(model, f"{output_path}{save_file_name}_{epoch}.eqx")
 
     if use_best:
         model = best_model
@@ -552,5 +555,6 @@ def train_model_from_config(
         use_best=config.training.use_best,
         save_iter=config.training.save_iter,
         save_file_name=config.training.save_file_name,
+        output_path=config.training.output_path,
         num_devices=config.training.num_devices,
     )

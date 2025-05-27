@@ -61,7 +61,7 @@ def main():
         help="Path to pretrained model for fine-tuning (optional)",
     )
     parser.add_argument(
-        "--output", help="Output path for trained model (default: model.eqx)"
+        "--output", help="Output directory for trained model and train/test losses (default: current directory)"
     )
     parser.add_argument(
         "--hitpatterns", help="Path to hitpatterns data file (.npz)"
@@ -82,7 +82,7 @@ def main():
     config = load_config(config_path)
 
     # Set default output path if not provided
-    output_path = args.output or "model.eqx"
+    output_path = args.output or ""
 
     # Set up data paths
     hitpatterns_path = args.hitpatterns or "data/hitpatterns.npz"
@@ -134,6 +134,14 @@ def main():
         print("Creating new model from scratch")
         model = create_model_from_config(config, subkey)
 
+    # Ensure that output path ends with a slash
+    output_path = config.training.output_path or output_path
+    if not output_path.endswith("/"):
+        output_path += "/"
+        config.training.output_path = output_path
+    # Create output directory if it doesn't exist
+    os.makedirs(output_path, exist_ok=True)
+
     # Train model
     print("Starting training...")
     trained_model, train_losses, test_losses = train_model_from_config(
@@ -147,9 +155,10 @@ def main():
         config=config,
     )
 
-    # Save model
-    save_model(trained_model, output_path)
-
+    # Save model, train, and test losses
+    save_model(trained_model, f"{output_path}model.eqx")
+    jax.numpy.savez(f"{output_path}train_losses.npz", train_losses=train_losses)
+    jax.numpy.savez(f"{output_path}test_losses.npz", test_losses=test_losses)
     print(f"Training complete. Final test loss: {test_losses[-1]:.6f}")
 
 
