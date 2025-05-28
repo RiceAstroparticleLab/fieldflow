@@ -184,7 +184,7 @@ class ContinuousNormalizingFlow(eqx.Module):
             jnp.ndarray: Transformed data points.
         """
         term = diffrax.ODETerm(self.func_drift)
-        solver = diffrax.Tsit5()
+        solver = diffrax.ReversibleHeun()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -218,7 +218,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
-        solver = diffrax.Tsit5()
+        solver = diffrax.ReversibleHeun()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -253,7 +253,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
-        solver = diffrax.Tsit5()
+        solver = diffrax.ReversibleHeun()
         sol = diffrax.diffeqsolve(
             term,
             solver,
