@@ -499,7 +499,9 @@ def train(
             best_epoch = epoch
 
         if epoch % save_iter == 0:
-            save_model(model, str(Path(output_path) / f"{save_file_name}_{epoch}.eqx"))
+            save_model(
+                model, str(Path(output_path) / f"{save_file_name}_{epoch}.eqx")
+            )
 
     if use_best:
         model = best_model

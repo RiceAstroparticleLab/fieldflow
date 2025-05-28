@@ -82,9 +82,19 @@ def main():
     output_path = Path(args.output) if args.output else Path(".")
 
     # Set up data paths
-    hitpatterns_path = Path(args.hitpatterns) if args.hitpatterns else Path("data/hitpatterns.npz")
-    civ_map_path = Path(args.civ_map) if args.civ_map else Path("data/civ_map.json.gz")
-    posrec_model_path = Path(args.posrec_model) if args.posrec_model else Path("data/posrec_model.eqx")
+    hitpatterns_path = (
+        Path(args.hitpatterns)
+        if args.hitpatterns
+        else Path("data/hitpatterns.npz")
+    )
+    civ_map_path = (
+        Path(args.civ_map) if args.civ_map else Path("data/civ_map.json.gz")
+    )
+    posrec_model_path = (
+        Path(args.posrec_model)
+        if args.posrec_model
+        else Path("data/posrec_model.eqx")
+    )
 
     # Check if data files exist
     if not hitpatterns_path.exists():
@@ -159,7 +169,9 @@ def main():
     jax.numpy.savez(
         str(output_path / "train_losses.npz"), train_losses=train_losses
     )
-    jax.numpy.savez(str(output_path / "test_losses.npz"), test_losses=test_losses)
+    jax.numpy.savez(
+        str(output_path / "test_losses.npz"), test_losses=test_losses
+    )
     print(f"Training complete. Final test loss: {test_losses[-1]:.6f}")
 
 
