@@ -72,7 +72,7 @@ def generate_samples_for_cnf(
     conditions: Array,
     n_samples: int,
     posrec_model: eqx.Module,
-    tpc_r: float = 66.4,  # Default matches experiment.tpc_r
+    tpc_r: float = 129.96,  # Default matches experiment.tpc_r
     radius_buffer: float = 20.0,  # Default matches posrec.radius_buffer
 ) -> Array:
     """Generate samples from position reconstruction flow for CNF training.
