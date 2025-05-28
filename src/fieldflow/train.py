@@ -17,7 +17,7 @@ from jaxtyping import Array, PRNGKeyArray, PyTree
 from tqdm import trange
 
 from fieldflow.posrec import generate_samples_for_cnf
-from fieldflow.utils import compute_r
+from fieldflow.utils import compute_r, freeze_model_gradients
 
 if TYPE_CHECKING:
     from fieldflow.config import Config
@@ -367,10 +367,13 @@ def train(
     t1s_test_sharded = jax.device_put(t1s_test_batched, batch_sharding)
     zs_test_sharded = jax.device_put(zs_test_batched, batch_sharding)
 
-    # Shard model, optimizer state, and posrec_model once (replicated)
+    # Freeze posrec model gradients before sharding (performance optimization)
+    posrec_model_frozen = freeze_model_gradients(posrec_model)
+    
+    # Shard model, optimizer state, and frozen posrec_model once (replicated)
     model_sharded = eqx.filter_shard(model, replicated_sharding)
     opt_state_sharded = eqx.filter_shard(opt_state, replicated_sharding)
-    posrec_model_sharded = eqx.filter_shard(posrec_model, replicated_sharding)
+    posrec_model_sharded = eqx.filter_shard(posrec_model_frozen, replicated_sharding)
 
     @eqx.filter_jit
     def make_step(
