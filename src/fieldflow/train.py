@@ -6,6 +6,7 @@ CNF models to learn drift fields from position reconstruction data.
 
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import equinox as eqx
@@ -17,7 +18,7 @@ from jaxtyping import Array, PRNGKeyArray, PyTree
 from tqdm import trange
 
 from fieldflow.posrec import generate_samples_for_cnf
-from fieldflow.utils import compute_r, freeze_model_gradients
+from fieldflow.utils import compute_r
 
 if TYPE_CHECKING:
     from fieldflow.config import Config
@@ -61,7 +62,7 @@ def curl_loss(
     Returns:
         Curl penalty loss value
     """
-    jac_drift = jax.jacfwd(lambda a: model.func_drift(z, a, 0.))(x)
+    jac_drift = jax.jacfwd(lambda a: model.func_drift(z, a, 0.0))(x)
 
     # For 2D vector field, curl is ∂fy/∂x - ∂fx/∂y
     curl_penalty = (jac_drift[1, 0] - jac_drift[0, 1]) ** 2
@@ -120,7 +121,7 @@ def single_likelihood_loss(
     # Transform samples through CNF model
     transformed_samples, logdet = eqx.filter_vmap(
         lambda y, k: model.transform_and_log_det(y=y, t1=t1, key=k)
-    )(samples, keys[1:1+n_samples])
+    )(samples, keys[1 : 1 + n_samples])
 
     # Compute radii of transformed samples
     sample_r = compute_r(transformed_samples)
@@ -254,7 +255,6 @@ def save_model(model, path):
     print(f"Model saved to {path}")
 
 
-
 def train(
     key: PRNGKeyArray,
     model: eqx.Module,
@@ -367,13 +367,10 @@ def train(
     t1s_test_sharded = jax.device_put(t1s_test_batched, batch_sharding)
     zs_test_sharded = jax.device_put(zs_test_batched, batch_sharding)
 
-    # Freeze posrec model gradients before sharding (performance optimization)
-    posrec_model_frozen = freeze_model_gradients(posrec_model)
-    
     # Shard model, optimizer state, and frozen posrec_model once (replicated)
     model_sharded = eqx.filter_shard(model, replicated_sharding)
     opt_state_sharded = eqx.filter_shard(opt_state, replicated_sharding)
-    posrec_model_sharded = eqx.filter_shard(posrec_model_frozen, replicated_sharding)
+    posrec_model_sharded = eqx.filter_shard(posrec_model, replicated_sharding)
 
     @eqx.filter_jit
     def make_step(
@@ -442,7 +439,7 @@ def train(
         # Reshape to batch-first format: (n_batches, batch_size, ...)
         epoch_conds = shuffled_conds[:n_usable_samples].reshape(
             n_batches, n_batch, -1
-            )
+        )
         epoch_t1s = shuffled_t1s[:n_usable_samples].reshape(n_batches, n_batch)
         epoch_zs = shuffled_zs[:n_usable_samples].reshape(n_batches, n_batch)
 
@@ -501,8 +498,10 @@ def train(
             best_model = model
             best_epoch = epoch
 
-        if epoch%save_iter == 0:
-            save_model(model, f"{output_path}{save_file_name}_{epoch}.eqx")
+        if epoch % save_iter == 0:
+            save_model(
+                model, str(Path(output_path) / f"{save_file_name}_{epoch}.eqx")
+            )
 
     if use_best:
         model = best_model
