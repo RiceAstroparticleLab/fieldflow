@@ -42,14 +42,14 @@ class ModelConfig:
 
     data_size: int = 2
     exact_logp: bool = True
-    width_size: int = 48
-    depth: int = 3
+    width_size: int = 192
+    depth: int = 10
 
     # ODE Solver settings
     use_pid_controller: bool = True
     rtol: float = 1e-3
     atol: float = 1e-6
-    dtmax: float = 5.0
+    dtmax: float = 2.0
 
     # Time settings
     t0: float = 0.0
@@ -68,7 +68,7 @@ class PosRecFlowConfig:
     invert_bool: bool = False
 
     # Conditioning
-    cond_dim: int = 494  # Should be set as conditions.shape[1]
+    cond_dim: int = 860  # Should be set as conditions.shape[1]
 
     # Spline parameters
     spline_knots: int = 5
@@ -114,14 +114,14 @@ class TrainingConfig:
 
     # Data and sampling parameters
     n_samples: int = 16
-    n_train: int = 200000
-    n_test: int = 20000
+    n_train: int = 65536
+    n_test: int = 4096
 
     # Model selection and loss parameters
     use_best: bool = True
     curl_loss_multiplier: float = 1000.0
     z_scale: float = 5.0
-    multisteps_every_k: int = 4
+    multisteps_every_k: int = 1
 
     # Distributed training parameters
     num_devices: int = 1
@@ -142,8 +142,8 @@ class ExperimentConfig:
         tpc_r: Radius of the TPC for boundary constraints.
     """
 
-    tpc_height: float = 148.6515
-    tpc_r: float = 66.4  # TPC radius in cm
+    tpc_height: float = 259.92
+    tpc_r: float = 129.96  # TPC radius in cm
 
 
 @dataclass
