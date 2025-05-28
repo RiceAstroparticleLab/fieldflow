@@ -6,6 +6,7 @@ CNF models to learn drift fields from position reconstruction data.
 
 import warnings
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import equinox as eqx
@@ -498,7 +499,7 @@ def train(
             best_epoch = epoch
 
         if epoch % save_iter == 0:
-            save_model(model, f"{output_path}{save_file_name}_{epoch}.eqx")
+            save_model(model, str(Path(output_path) / f"{save_file_name}_{epoch}.eqx"))
 
     if use_best:
         model = best_model

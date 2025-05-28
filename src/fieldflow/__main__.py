@@ -5,7 +5,6 @@ models from configuration, with optional fine-tuning of pre-trained models.
 """
 
 import argparse
-import os
 from pathlib import Path
 
 import diffrax
@@ -80,21 +79,21 @@ def main():
     config = load_config(config_path)
 
     # Set default output path if not provided
-    output_path = args.output or ""
+    output_path = Path(args.output) if args.output else Path(".")
 
     # Set up data paths
-    hitpatterns_path = args.hitpatterns or "data/hitpatterns.npz"
-    civ_map_path = args.civ_map or "data/civ_map.json.gz"
-    posrec_model_path = args.posrec_model or "data/posrec_model.eqx"
+    hitpatterns_path = Path(args.hitpatterns) if args.hitpatterns else Path("data/hitpatterns.npz")
+    civ_map_path = Path(args.civ_map) if args.civ_map else Path("data/civ_map.json.gz")
+    posrec_model_path = Path(args.posrec_model) if args.posrec_model else Path("data/posrec_model.eqx")
 
     # Check if data files exist
-    if not os.path.exists(hitpatterns_path):
+    if not hitpatterns_path.exists():
         raise FileNotFoundError(
             f"Hitpatterns file not found: {hitpatterns_path}"
         )
-    if not os.path.exists(civ_map_path):
+    if not civ_map_path.exists():
         raise FileNotFoundError(f"CIV map file not found: {civ_map_path}")
-    if not os.path.exists(posrec_model_path):
+    if not posrec_model_path.exists():
         raise FileNotFoundError(
             f"Position reconstruction model not found: {posrec_model_path}"
         )
@@ -132,12 +131,8 @@ def main():
         print("Creating new model from scratch")
         model = create_model_from_config(config, subkey)
 
-    # Ensure that output path ends with a slash, if it's not empty
-    if len(output_path) != 0 and not output_path.endswith("/"):
-        output_path += "/"
-
     # Create output directory if it doesn't exist
-    os.makedirs(output_path, exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)
 
     # Train model
     print("Starting training...")
@@ -151,7 +146,7 @@ def main():
             posrec_model=posrec_model,
             civ_map=civ_map,
             config=config,
-            output_path=output_path,
+            output_path=str(output_path),
         )
     )
 
@@ -159,12 +154,12 @@ def main():
     save_file_name = config.training.save_file_name
     save_model(
         trained_model,
-        f"{output_path}best_{save_file_name}_epoch_{best_epoch}.eqx",
+        str(output_path / f"best_{save_file_name}_epoch_{best_epoch}.eqx"),
     )
     jax.numpy.savez(
-        f"{output_path}train_losses.npz", train_losses=train_losses
+        str(output_path / "train_losses.npz"), train_losses=train_losses
     )
-    jax.numpy.savez(f"{output_path}test_losses.npz", test_losses=test_losses)
+    jax.numpy.savez(str(output_path / "test_losses.npz"), test_losses=test_losses)
     print(f"Training complete. Final test loss: {test_losses[-1]:.6f}")
 
 
