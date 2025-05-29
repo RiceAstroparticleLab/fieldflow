@@ -34,6 +34,7 @@ def create_model_from_config(config, key):
             rtol=config.model.rtol,
             atol=config.model.atol,
             dtmax=config.model.dtmax,
+            dtmin=config.model.dtmin,
         )
     else:
         step_size_controller = diffrax.ConstantStepSize()

@@ -19,6 +19,7 @@ use_pid_controller = true  # Use adaptive PIDController (recommended) vs constan
 rtol = 1e-3  # Relative tolerance for PIDController (smaller = more accurate, slower)
 atol = 1e-6  # Absolute tolerance for PIDController (smaller = more accurate, slower)
 dtmax = 5.0  # Maximum step size for PIDController
+dtmin = 0.05  # Minimum step size for PIDController
 
 # Time integration parameters
 t0 = 0.0  # Starting time for ODE integration

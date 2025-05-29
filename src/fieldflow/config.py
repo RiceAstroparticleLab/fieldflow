@@ -35,6 +35,7 @@ class ModelConfig:
         rtol: Relative tolerance for PIDController.
         atol: Absolute tolerance for PIDController.
         dtmax: Maximum step size for PIDController.
+        dtmin: Minimum step size for PIDController.
         t0: Starting time for ODE.
         extract_t1: End time for extract phase.
         dt0: Initial time step.
@@ -50,6 +51,7 @@ class ModelConfig:
     rtol: float = 1e-3
     atol: float = 1e-6
     dtmax: float = 2.0
+    dtmin: float = 0.05
 
     # Time settings
     t0: float = 0.0
