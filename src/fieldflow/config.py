@@ -129,7 +129,7 @@ class TrainingConfig:
     num_devices: int = 1
 
     # Model saving
-    save_iter: int = 10
+    save_iter: int = 2
     save_file_name: str = "model"
 
 @dataclass
