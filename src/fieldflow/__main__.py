@@ -13,7 +13,11 @@ import jax
 
 from fieldflow.config import load_config
 from fieldflow.dataloader import load_data_from_config
-from fieldflow.model import ContinuousNormalizingFlow, DriftFromPotential, MLPFunc
+from fieldflow.model import (
+    ContinuousNormalizingFlow,
+    DriftFromPotential,
+    MLPFunc,
+)
 from fieldflow.posrec import posrec_flow
 from fieldflow.train import save_model, train_model_from_config
 
