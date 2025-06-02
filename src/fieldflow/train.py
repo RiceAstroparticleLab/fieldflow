@@ -559,6 +559,7 @@ def train(
                 thiskey,
                 batch_data,
                 posrec_model_sharded,
+                scalar = scalar,
             )
             train_loss_list.append(train_loss)
 
