@@ -178,6 +178,15 @@ class ScalarMLPFunc(eqx.Module):
         # return scalar potential value
         return jnp.squeeze(y, axis=-1)
 
+class DriftFromPotential(eqx.Module):
+    model: ScalarMLPFunc
+
+    def __call__(self, t, y, args):
+        def scalar_pot(y_):
+            return self.model(t, y_, args).squeeze()
+        gradient = jax.grad(scalar_pot)(y)
+        return -gradient
+
 class ContinuousNormalizingFlow(eqx.Module):
     """Continuous normalizing flow using neural ODEs.
 
