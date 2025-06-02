@@ -369,6 +369,7 @@ def train(
     output_path: str = "",
     loss_fn: Callable = likelihood_loss,
     num_devices: int = 1,
+    scalar: bool = False
 ) -> tuple[eqx.Module, list, list]:
     """Train a continuous normalizing flow model.
 
@@ -398,6 +399,7 @@ def train(
         output_path: Path to directory for saving, default current directory
         loss_fn: Loss function to use
         num_devices: Number of devices to use for data parallelization
+        scalar: If True, omit curl loss component
 
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)
@@ -471,6 +473,7 @@ def train(
         key: PRNGKeyArray,
         batch_data: tuple[Array, Array, Array],
         posrec_model: eqx.Module,
+        scalar: bool
     ) -> tuple[eqx.Module, PyTree, float]:
         """Single training step with pre-sharded batch data."""
         # Data and models are already sharded - extract batch components
@@ -488,6 +491,7 @@ def train(
             tpc_r,
             n_samples=n_samples,
             radius_buffer=radius_buffer,
+            scalar=scalar,
         )
 
         # Update model (gradients automatically aggregated across devices)
@@ -516,6 +520,7 @@ def train(
             tpc_r,
             n_samples=n_samples,
             radius_buffer=radius_buffer,
+            scalar = scalar,
         )
     ]
     best_epoch = 0
@@ -579,6 +584,7 @@ def train(
             tpc_r,
             n_samples=n_samples,
             radius_buffer=radius_buffer,
+            scalar=scalar,
         )
         test_loss_list.append(test_loss)
 
@@ -654,4 +660,5 @@ def train_model_from_config(
         save_file_name=config.training.save_file_name,
         output_path=output_path,
         num_devices=config.training.num_devices,
+        scalar=config.model.scalar,
     )
