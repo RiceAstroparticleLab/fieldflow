@@ -159,16 +159,17 @@ class ScalarMLPFunc(eqx.Module):
         self.layers = layers
 
     def __call__(self, t, y, args):  # noqa: ARG002
-        """Compute the drift (velocity) at given time and state.
+        """Compute the scalar potential at given time and state.
 
         Args:
             t (float): Current time.
             y (jnp.ndarray): Current state vector.
 
         Returns:
-            jnp.ndarray: Drift vector of the same shape as y.
+            jnp.ndarray: Potential as a vector of shape (batch_size, 1).
         """
-        t = jnp.asarray(t)[None]
+        # Ensure t is a 1D array and broadcast it to match y's shape
+        t = jnp.broadcast_to(jnp.asarray(t), y.shape[:-1] + (1,))
         y = jnp.concatenate((y, t), axis=-1)
 
         for layer in self.layers[:-1]:
@@ -180,7 +181,9 @@ class ScalarMLPFunc(eqx.Module):
 
 class DriftFromPotential(eqx.Module):
     model: ScalarMLPFunc
-
+    """
+    Drift function derived from a scalar potential model.
+    """
     def __init__(self, *, data_size, width_size, depth, key, **kwargs):
         super().__init__(**kwargs)
         # Initialize the scalar potential model
@@ -193,7 +196,8 @@ class DriftFromPotential(eqx.Module):
 
     def __call__(self, t, y, args):
         def scalar_pot(y_):
-            return self.model(t, y_, args).squeeze()
+            # use sum for batching
+            return self.model(t, y_, args).sum()
         gradient = jax.grad(scalar_pot)(y)
         return -gradient
 
