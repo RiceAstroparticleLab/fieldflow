@@ -181,6 +181,16 @@ class ScalarMLPFunc(eqx.Module):
 class DriftFromPotential(eqx.Module):
     model: ScalarMLPFunc
 
+    def __init__(self, *, data_size, width_size, depth, key, **kwargs):
+        super().__init__(**kwargs)
+        # Initialize the scalar potential model
+        self.model = ScalarMLPFunc(
+            data_size=data_size,
+            width_size=width_size,
+            depth=depth,
+            key=key,
+        )
+
     def __call__(self, t, y, args):
         def scalar_pot(y_):
             return self.model(t, y_, args).squeeze()
