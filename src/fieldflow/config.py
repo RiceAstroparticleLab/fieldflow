@@ -45,6 +45,7 @@ class ModelConfig:
     exact_logp: bool = True
     width_size: int = 192
     depth: int = 10
+    scalar: bool = False  # Whether to use scalar field instead of vector field
 
     # ODE Solver settings
     use_pid_controller: bool = True

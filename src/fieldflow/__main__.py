@@ -13,7 +13,7 @@ import jax
 
 from fieldflow.config import load_config
 from fieldflow.dataloader import load_data_from_config
-from fieldflow.model import ContinuousNormalizingFlow
+from fieldflow.model import ContinuousNormalizingFlow, DriftFromPotential, MLPFunc
 from fieldflow.posrec import posrec_flow
 from fieldflow.train import save_model, train_model_from_config
 
@@ -39,8 +39,12 @@ def create_model_from_config(config, key):
     else:
         step_size_controller = diffrax.ConstantStepSize()
 
+    # Choose drift function based on whether scalar field is used
+    drift_func = DriftFromPotential if config.model.scalar else MLPFunc
+
     # Create and return model
     return ContinuousNormalizingFlow(
+        func=drift_func,
         data_size=config.model.data_size,
         exact_logp=config.model.exact_logp,
         width_size=config.model.width_size,
