@@ -238,6 +238,7 @@ def likelihood_loss(
     civ_map: RegularGridInterpolator,
     tpc_r: float,
     n_samples: int = 4,
+    scalar = False,
     **kwargs,
 ) -> float:
     """Compute vectorized likelihood loss over a batch of data.
@@ -252,26 +253,43 @@ def likelihood_loss(
         civ_map: Charge-in-volume survival probability map
         tpc_r: TPC radius for boundary constraints
         n_samples: Number of samples per data point
+        scalar: If True, omit curl loss component
         **kwargs: Additional arguments passed to single_likelihood_loss
 
     Returns:
         Mean loss over the batch
     """
     keys = jax.random.split(key, len(zs))
-    vec_loss = eqx.filter_vmap(
-        lambda k, cond, t1, z: single_likelihood_loss(
-            k,
-            model,
-            cond,
-            t1,
-            z,
-            posrec_model,
-            civ_map,
-            tpc_r,
-            n_samples=n_samples,
-            **kwargs,
+    if not scalar:
+        vec_loss = eqx.filter_vmap(
+            lambda k, cond, t1, z: single_likelihood_loss(
+                k,
+                model,
+                cond,
+                t1,
+                z,
+                posrec_model,
+                civ_map,
+                tpc_r,
+                n_samples=n_samples,
+                **kwargs,
+            )
         )
-    )
+    else:
+        vec_loss = eqx.filter_vmap(
+            lambda k, cond, t1, z: single_likelihood_loss_no_curl(
+                k,
+                model,
+                cond,
+                t1,
+                z,
+                posrec_model,
+                civ_map,
+                tpc_r,
+                n_samples=n_samples,
+                **kwargs,
+            )
+        )
     return jnp.mean(vec_loss(keys, conditions, t1s, zs))
 
 
