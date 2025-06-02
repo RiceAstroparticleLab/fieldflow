@@ -123,6 +123,61 @@ class MLPFunc(eqx.Module):
         return y
 
 
+class ScalarMLPFunc(eqx.Module):
+    """Multilayer perceptron that models the scalar potential in
+    a continuous normalizing flow.
+    """
+
+    layers: list[eqx.nn.Linear]
+
+    def __init__(self, *, data_size, width_size, depth, key, **kwargs):
+        """Initialize the MLP scalar potential function.
+
+        Args:
+            data_size (int): Dimensionality of the input data.
+            width_size (int): Hidden layer width. Ignored if depth=0.
+            depth (int): Number of hidden layers. If 0, creates a single linear
+              layer.
+            key (jax.random.key): Random key for parameter initialization.
+        """
+        super().__init__(**kwargs)
+        keys = jax.random.split(key, depth + 1)
+        layers = []
+        # modify final output to be scalar
+        if depth == 0:
+            layers.append(eqx.nn.Linear(data_size + 1, 1, key=keys[0]))
+        else:
+            layers.append(
+                eqx.nn.Linear(data_size + 1, width_size, key=keys[0])
+            )
+            for i in range(depth - 1):
+                layers.append(
+                    eqx.nn.Linear(width_size, width_size, key=keys[i + 1])
+                )
+
+            layers.append(eqx.nn.Linear(width_size, 1, key=keys[-1]))
+        self.layers = layers
+
+    def __call__(self, t, y, args):  # noqa: ARG002
+        """Compute the drift (velocity) at given time and state.
+
+        Args:
+            t (float): Current time.
+            y (jnp.ndarray): Current state vector.
+
+        Returns:
+            jnp.ndarray: Drift vector of the same shape as y.
+        """
+        t = jnp.asarray(t)[None]
+        y = jnp.concatenate((y, t), axis=-1)
+
+        for layer in self.layers[:-1]:
+            y = layer(y)
+            y = jax.nn.silu(y)
+        y = self.layers[-1](y)
+        # return scalar potential value
+        return jnp.squeeze(y, axis=-1)
+
 class ContinuousNormalizingFlow(eqx.Module):
     """Continuous normalizing flow using neural ODEs.
 
