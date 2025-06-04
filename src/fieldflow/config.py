@@ -30,6 +30,7 @@ class ModelConfig:
         exact_logp: Whether to use exact log probability calculation.
         width_size: Width of neural network layers.
         depth: Depth of neural network.
+        scalar: Whether to use scalar field instead of vector field.
         use_pid_controller: Whether to use PIDController instead of
             ConstantStepSize.
         rtol: Relative tolerance for PIDController.
@@ -45,7 +46,7 @@ class ModelConfig:
     exact_logp: bool = True
     width_size: int = 192
     depth: int = 10
-    scalar: bool = False  # Whether to use scalar field instead of vector field
+    scalar: bool = False
 
     # ODE Solver settings
     use_pid_controller: bool = True
