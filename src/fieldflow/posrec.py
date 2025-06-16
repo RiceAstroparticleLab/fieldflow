@@ -2,7 +2,7 @@
 detector hit patterns, including coordinate transformations.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import equinox as eqx
 import jax
@@ -14,8 +14,7 @@ from flowjax.bijections import (
 )
 from flowjax.distributions import StandardNormal
 from flowjax.flows import coupling_flow
-from jaxtyping import Array, PRNGKeyArray, ArrayLike
-from typing import ClassVar
+from jaxtyping import Array, ArrayLike, PRNGKeyArray
 
 if TYPE_CHECKING:
     from fieldflow.config import Config
