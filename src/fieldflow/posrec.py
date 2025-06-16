@@ -281,7 +281,9 @@ class StandardNormalToUnitBall(AbstractBijection):
         return x, log_det
 
 
-constrain_vec = jax.vmap(StandardNormalToUnitBall.inverse)
+unconstrain_transform = StandardNormalToUnitBall()
+
+constrain_vec = jax.vmap(unconstrain_transform.inverse)
 
 @jax.jit
 def data_inv_transformation(
