@@ -2,6 +2,7 @@
 detector hit patterns, including coordinate transformations.
 """
 
+import copy
 from typing import TYPE_CHECKING, ClassVar
 
 import equinox as eqx
@@ -10,6 +11,9 @@ import jax.numpy as jnp
 import jax.scipy.special as special
 from flowjax.bijections import (
     AbstractBijection,
+    Affine,
+    Chain,
+    Invert,
     RationalQuadraticSpline,
 )
 from flowjax.distributions import StandardNormal
@@ -180,7 +184,8 @@ class StandardNormalToUnitBall(AbstractBijection):
     """
 
     shape: tuple[int, ...] = (2,)  # Default to 2D
-    cond_shape: ClassVar[None] = None
+    cond_shape: ClassVar[None] = None # Not a conditional bijection
+
 
     def transform(self, x: ArrayLike, condition=None) -> ArrayLike:  # noqa: ARG002
         """Transform standard normal to uniform on unit ball.
@@ -281,9 +286,37 @@ class StandardNormalToUnitBall(AbstractBijection):
         return x, log_det
 
 
-unconstrain_transform = StandardNormalToUnitBall()
+def get_unconstrain_transform():
+    """Get the unconstrain transform.
 
-constrain_vec = jax.vmap(unconstrain_transform.inverse)
+    Maps from [-1,1] coordinates to unbounded space via:
+    1. [-1,1] -> [-1+eps, 1-eps] (avoids saturation)
+    2. unbounding transform (arctanh or StandardNormalToUnitBall.inverse)
+    3. final scaling
+
+    Returns:
+        Transformation object
+    """
+    # Common first step: avoid saturation
+    affine_eps = Affine(
+        loc=jnp.zeros(2),
+        scale=(1 - EPS) * jnp.ones(2),
+    )
+
+    # Choose the unbounding transformation
+    unbounding_transform = Invert(StandardNormalToUnitBall(shape=(2,)))
+
+    # Common final step: scaling
+    affine_scale = Affine(
+        loc=jnp.zeros(2),
+        scale=jnp.array([1.0] * 2),
+    )
+
+    return Chain([affine_eps, unbounding_transform, affine_scale])
+
+
+constrain_vec = jax.vmap(get_unconstrain_transform().inverse)
+
 
 @jax.jit
 def data_inv_transformation(
@@ -303,13 +336,14 @@ def data_inv_transformation(
         Array of shape (N, 2) in physical coordinates (cm)
     """
 
+
     # Apply the constraint transformation (StandardNormalToUnitBall)
-    constrained_data = constrain_vec(data)
+    data = copy.deepcopy(constrain_vec(data))
 
     # Convert from [0,1] space to physical coordinates
     max_pred = tpc_r + radius_buffer
-    data_0 = constrained_data[:, 0] * max_pred
-    data_1 = constrained_data[:, 1] * max_pred
+    data_0 = data[:, 0] * max_pred
+    data_1 = data[:, 1] * max_pred
     return jnp.stack([data_0, data_1], axis=-1)
 
 
