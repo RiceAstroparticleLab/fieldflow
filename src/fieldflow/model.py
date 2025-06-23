@@ -169,7 +169,7 @@ class ScalarMLPFunc(eqx.Module):
             jnp.ndarray: Potential as a vector of shape (batch_size, 1).
         """
         # Ensure t is a 1D array and broadcast it to match y's shape
-        t = jnp.broadcast_to(jnp.asarray(t), y.shape[:-1] + (1,))
+        t = jnp.broadcast_to(jnp.asarray(t), (*y.shape[:-1], 1))
         y = jnp.concatenate((y, t), axis=-1)
 
         for layer in self.layers[:-1]:
