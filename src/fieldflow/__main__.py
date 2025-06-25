@@ -57,6 +57,7 @@ def create_model_from_config(config, key):
         stepsizecontroller=step_size_controller,
         t0=config.model.t0,
         dt0=config.model.dt0,
+        extract_t1 = config.model.extract_t1,
     )
 
 
