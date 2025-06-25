@@ -507,6 +507,7 @@ def train(
     # Training loop
     loop = trange(epochs)
     best_model = model
+    average_train_loss_list = []
     train_loss_list = []
     test_loss_list = [
         loss_fn(
@@ -588,6 +589,7 @@ def train(
             scalar=scalar,
         )
         test_loss_list.append(test_loss)
+        average_train_loss_list.append(jnp.nanmean(jnp.array(train_loss_list[-n_batches:])))
 
         # Update unsharded model for best model tracking
         model = eqx.filter_shard(model_sharded, replicated_sharding)
@@ -605,7 +607,7 @@ def train(
     if use_best:
         model = best_model
 
-    return model, train_loss_list, test_loss_list, best_epoch
+    return model, average_train_loss_list, test_loss_list, best_epoch
 
 
 def train_model_from_config(
