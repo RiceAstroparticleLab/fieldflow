@@ -360,7 +360,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         stepsizecontroller (diffrax.AbstractStepSizeController): Controls
           adaptive stepping.
 
-        func_extract (eqx.Module): Neural network 
+        func_extract (eqx.Module): Neural network
         modeling the extraction function.
         extract_t1 (float): final extraction time
     """
