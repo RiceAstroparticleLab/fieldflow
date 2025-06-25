@@ -201,7 +201,7 @@ class DriftFromPotential(eqx.Module):
         gradient = jax.grad(scalar_pot)(y)
         return -gradient
 
-class ContinuousNormalizingFlow(eqx.Module):
+'''class ContinuousNormalizingFlow(eqx.Module):
     """Continuous normalizing flow using neural ODEs.
 
     Attributes:
@@ -341,6 +341,210 @@ class ContinuousNormalizingFlow(eqx.Module):
             y,
             (eps, self.func_drift),
             stepsize_controller=self.stepsizecontroller,
+        )
+        (y,), (delta_log_likelihood,) = sol.ys
+
+        return y, delta_log_likelihood
+'''
+
+        
+class ContinuousNormalizingFlow(eqx.Module):
+    """Continuous normalizing flow using neural ODEs.
+
+    Attributes:
+        func_drift (eqx.Module): Neural network modeling the drift function.
+        data_size (int): Dimensionality of the data.
+        exact_logp (bool): Whether to use exact log probability computation.
+        t0 (float): Initial time for ODE integration.
+        dt0 (float): Initial time step for ODE integration.
+        stepsizecontroller (diffrax.AbstractStepSizeController): Controls
+          adaptive stepping.
+
+        func_extract (eqx.Module): Neural network modeling the extraction function.
+        extract_t1 (float): final extraction time
+    """
+
+    func_drift: eqx.Module
+    data_size: int
+    exact_logp: bool
+    t0: float
+    dt0: float
+    stepsizecontroller: diffrax.AbstractStepSizeController
+
+    func_extract: eqx.Module
+    extract_t1: float
+
+    def __init__(
+        self,
+        *,
+        data_size,
+        exact_logp,
+        width_size,
+        depth,
+        key,
+        stepsizecontroller=None,
+        func=MLPFunc,
+        t0=0.0,
+        dt0=1.0,
+        extract_t1 = 10,
+        **kwargs,
+    ):
+        if stepsizecontroller is None:
+            stepsizecontroller = diffrax.ConstantStepSize()
+        keys = jax.random.split(key, 2)
+        super().__init__(**kwargs)
+        self.func_drift = func(
+            data_size=data_size,
+            width_size=width_size,
+            depth=depth,
+            key=keys[0],
+        )
+        self.func_extract = (
+            func(
+                data_size=data_size,
+                width_size=width_size,
+                depth=depth,
+                key=keys[1],
+            )
+        )
+        self.data_size = data_size
+        self.exact_logp = exact_logp
+        self.t0 = t0
+        self.dt0 = dt0
+        self.stepsizecontroller = stepsizecontroller
+        self.extract_t1 = extract_t1
+
+    def transform(self, *, y, t1):
+        """Transform data through the flow without computing log determinants.
+
+        Args:
+            y (jnp.ndarray): Input data points to transform.
+            t1 (float): Target time for the transformation.
+
+        Returns:
+            jnp.ndarray: Transformed data points.
+        """
+        term = diffrax.ODETerm(self.func_drift)
+        solver = diffrax.ReversibleHeun()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            self.t0,
+            self.extract_t1,
+            self.dt0,
+            y,
+            stepsize_controller=self.stepsizecontroller,
+        )
+        (y,) = sol.ys
+
+        term = diffrax.ODETerm(self.func_drift)
+        solver = diffrax.ReversibleHeun()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            self.t0,
+            t1,
+            self.dt0,
+            y,
+            stepsize_controller=self.stepsizecontroller,
+        )
+        (y,) = sol.ys
+        return y
+
+    def transform_and_log_det(self, *, y, t1, key):
+        """Transform data and compute log determinant of the transformation.
+
+        Args:
+            y (jnp.ndarray): Input data points to transform.
+            t1 (float): Target time for the transformation.
+            key (jax.random.key): Random key for stochastic operations.
+
+        Returns:
+            tuple: (transformed_y, log_determinant) where transformed_y is the
+            transformed data and log_determinant is the change in log
+            probability.
+        """
+        if self.exact_logp:
+            term = diffrax.ODETerm(exact_logp_wrapper)
+        else:
+            term = diffrax.ODETerm(approx_logp_wrapper)
+        eps = jax.random.normal(key, y.shape)
+        delta_log_likelihood = 0.0
+
+        y = (y, delta_log_likelihood)
+        solver = diffrax.ReversibleHeun()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            self.t0,
+            self.extract_t1,
+            self.dt0,
+            y,
+            (eps, self.func_extract),
+            stepsize_controller=self.stepsizecontroller
+        )
+        (y,), (delta_log_likelihood,) = sol.ys
+
+        y = (y, delta_log_likelihood)
+        solver = diffrax.ReversibleHeun()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            self.t0,
+            t1,
+            self.dt0,
+            y,
+            (eps, self.func_drift),
+            stepsize_controller=self.stepsizecontroller,
+        )
+        (y,), (delta_log_likelihood,) = sol.ys
+        return y, delta_log_likelihood
+
+    def inverse_and_log_det(self, *, y, t1, key):
+        """Apply inverse transformation and compute the log determinant.
+
+        Args:
+            y (jnp.ndarray): Input data points to inverse transform.
+            t1 (float): Starting time for the inverse transformation.
+            key (jax.random.key): Random key for stochastic operations.
+
+        Returns:
+            tuple: (inverse_y, log_determinant) where inverse_y is the inverse
+            transformed data and log_determinant is the change in log
+            probability.
+        """
+        if self.exact_logp:
+            term = diffrax.ODETerm(exact_logp_wrapper)
+        else:
+            term = diffrax.ODETerm(approx_logp_wrapper)
+        eps = jax.random.normal(key, y.shape)
+        delta_log_likelihood = 0.0
+
+        y = (y, delta_log_likelihood)
+        solver = diffrax.ReversibleHeun()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            t1,
+            self.t0,
+            -self.dt0,
+            y,
+            (eps, self.func_drift),
+            stepsize_controller=self.stepsizecontroller,
+        )
+        (y,), (delta_log_likelihood,) = sol.ys
+
+        y = (y, delta_log_likelihood)
+        solver = diffrax.Tsit5()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            self.extract_t1,
+            self.t0,
+            -self.dt0,
+            y,
+            (eps, self.func_extract),
+            stepsize_controller=self.stepsizecontroller
         )
         (y,), (delta_log_likelihood,) = sol.ys
 
