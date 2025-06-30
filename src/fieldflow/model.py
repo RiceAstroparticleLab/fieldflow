@@ -425,7 +425,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         Returns:
             jnp.ndarray: Transformed data points.
         """
-        term = diffrax.ODETerm(self.func_drift)
+        term = diffrax.ODETerm(self.func_extract)
         solver = diffrax.ReversibleHeun()
         sol = diffrax.diffeqsolve(
             term,
