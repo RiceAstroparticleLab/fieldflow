@@ -83,6 +83,7 @@ def single_likelihood_loss(
     min_p: float = 1e-3,
     n_samples: int = 4,
     curl_loss_multiplier: float = 1000.0,
+    scalar: bool = False,
 ) -> float:
     """Compute likelihood loss for a single data point.
 
@@ -102,6 +103,8 @@ def single_likelihood_loss(
         min_p: Minimum survival probability (for numerical stability)
         n_samples: Number of samples for Monte Carlo estimation
         curl_loss_multiplier: Weight for curl penalty term
+        scalar: False if using vector method, True if using scalar pot method
+
 
     Returns:
         Negative log-likelihood loss value
@@ -145,87 +148,15 @@ def single_likelihood_loss(
         n_samples
     )
 
-    # Add curl penalty
-    curl_penalty = curl_loss_multiplier * curl_loss(
-        keys[1 + n_samples], model, t1, transformed_samples[0]
-    )
+    if scalar:
+        curl_penalty = 0
+    else:
+        # Add curl penalty
+        curl_penalty = curl_loss_multiplier * curl_loss(
+            keys[1 + n_samples], model, t1, transformed_samples[0]
+        )
 
     return likelihood_loss_val + curl_penalty
-
-def single_likelihood_loss_no_curl(
-    key: PRNGKeyArray,
-    model: eqx.Module,
-    condition: Array,
-    t1: float,
-    z: float,
-    posrec_model: eqx.Module,
-    civ_map: RegularGridInterpolator,
-    tpc_r: float,
-    radius_buffer: float = 20.0,
-    min_p: float = 1e-3,
-    n_samples: int = 4,
-) -> float:
-    """Compute likelihood loss for a single data point.
-
-    This function computes the negative log-likelihood for a single event,
-    incorporating survival probability from CIV maps.
-
-    Args:
-        key: Random key for sampling
-        model: CNF model to train
-        condition: Hit pattern conditioning information
-        t1: Target time for transformation (scaled z coordinate)
-        z: Physical z coordinate
-        posrec_model: Pretrained position reconstruction model
-        civ_map: Charge-in-volume survival probability map
-        tpc_r: TPC radius for boundary constraints
-        radius_buffer: Buffer for predictions beyond TPC radius
-        min_p: Minimum survival probability (for numerical stability)
-        n_samples: Number of samples for Monte Carlo estimation
-
-    Returns:
-        Negative log-likelihood loss value
-    """
-    keys = jax.random.split(key, 2 + n_samples)
-
-    # Generate samples from position reconstruction flow
-    samples = generate_samples_for_cnf(
-        keys[0],
-        condition[jnp.newaxis, ...],
-        n_samples,
-        posrec_model,
-        tpc_r,
-        radius_buffer,
-    )
-
-    # Transform samples through CNF model
-    transformed_samples, logdet = eqx.filter_vmap(
-        lambda y, k: model.transform_and_log_det(y=y, t1=t1, key=k)
-    )(samples, keys[1 : 1 + n_samples])
-
-    # Compute radii of transformed samples
-    sample_r = compute_r(transformed_samples)
-
-    # Compute survival probabilities from CIV map
-    civ_coords = jnp.vstack((sample_r, jnp.repeat(z, n_samples))).T
-    vec_civ_map = jax.vmap(civ_map)
-    p_surv = vec_civ_map(civ_coords)
-
-    # Apply rolloff regularization and boundary constraints
-    p_surv = rolloff_func(p_surv, min_p) * jnp.prod(
-        jnp.where(
-            sample_r <= tpc_r,
-            jnp.ones_like(sample_r),
-            jnp.exp((tpc_r - sample_r) / 10000),
-        )
-    )
-
-    # Compute negative log-likelihood using logsumexp for numerical stability
-    likelihood_loss_val = -jax.nn.logsumexp(a=logdet, b=p_surv) + jnp.log(
-        n_samples
-    )
-
-    return likelihood_loss_val
 
 @eqx.filter_jit
 def likelihood_loss(
@@ -260,8 +191,7 @@ def likelihood_loss(
         Mean loss over the batch
     """
     keys = jax.random.split(key, len(zs))
-    if not scalar:
-        vec_loss = eqx.filter_vmap(
+    vec_loss = eqx.filter_vmap(
             lambda k, cond, t1, z: single_likelihood_loss(
                 k,
                 model,
@@ -272,24 +202,11 @@ def likelihood_loss(
                 civ_map,
                 tpc_r,
                 n_samples=n_samples,
+                scalar = scalar,
                 **kwargs,
             )
         )
-    else:
-        vec_loss = eqx.filter_vmap(
-            lambda k, cond, t1, z: single_likelihood_loss_no_curl(
-                k,
-                model,
-                cond,
-                t1,
-                z,
-                posrec_model,
-                civ_map,
-                tpc_r,
-                n_samples=n_samples,
-                **kwargs,
-            )
-        )
+
     return jnp.mean(vec_loss(keys, conditions, t1s, zs))
 
 
