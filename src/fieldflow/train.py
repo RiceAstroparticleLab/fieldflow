@@ -529,7 +529,8 @@ def train(
         key, thiskey = jax.random.split(key, 2)
 
         # Shuffle data for this epoch
-        indices = jax.random.permutation(thiskey, jnp.arange(n_train))
+        indices = jax.random.permutation(thiskey,
+                                         jnp.arange(len(cond_train)))[:n_train]
         shuffled_conds = cond_train[indices]
         shuffled_t1s = t1s_train[indices]
         shuffled_zs = zs_train[indices]
