@@ -135,11 +135,13 @@ def single_likelihood_loss(
     p_surv = vec_civ_map(civ_coords)
 
     # Apply rolloff regularization and boundary constraints
-    p_surv = rolloff_func(p_surv, min_p) * jnp.where(
+    p_surv = rolloff_func(p_surv, min_p) * jnp.prod(
+        jnp.where(
             sample_r <= tpc_r,
             jnp.ones_like(sample_r),
             jnp.exp((tpc_r - sample_r) / 10000),
         )
+    )
 
     # Compute negative log-likelihood using logsumexp for numerical stability
     likelihood_loss_val = -jax.nn.logsumexp(a=logdet, b=p_surv) + jnp.log(
