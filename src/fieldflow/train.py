@@ -8,6 +8,7 @@ import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
+import json
 
 import equinox as eqx
 import jax
@@ -440,6 +441,11 @@ def train(
             scalar = scalar,
         )
     ]
+
+    output_path = Path(output_path)
+    with open(str(output_path / "test_losses.json"), "a") as f:
+        f.write(json.dumps(float(test_loss_list[-1])) + "\n")
+
     best_epoch = 0
     for epoch in loop:
         key, thiskey = jax.random.split(key, 2)
@@ -490,6 +496,12 @@ def train(
                     "test loss": f"{test_loss_list[-1]:0.3f}",
                 }
             )
+
+
+        with open(str(output_path / "test_losses.json"), "a") as f:
+            f.write(json.dumps(float(test_loss_list[-1])) + "\n")
+        with open(str(output_path / "train_losses.json"), "a") as f:
+            f.write(json.dumps(float(average_train_loss_list[-1])) + "\n")
 
         # Update unsharded model for best model tracking
         model = eqx.filter_shard(model_sharded, replicated_sharding)
