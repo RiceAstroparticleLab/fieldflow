@@ -492,9 +492,12 @@ def train(
                 }
             )
 
+         # Update unsharded model for best model tracking
+        model = eqx.filter_shard(model_sharded, replicated_sharding)
+
         # Evaluate on test set using sharded models and test data
         test_loss = loss_fn(
-            model_sharded,
+            model,
             key,
             cond_test_sharded[0],
             t1s_test_sharded[0],
@@ -508,9 +511,6 @@ def train(
         )
         test_loss_list.append(test_loss)
         average_train_loss_list.append(jnp.nanmean(jnp.array(train_loss_list[-n_batches:])))
-
-        # Update unsharded model for best model tracking
-        model = eqx.filter_shard(model_sharded, replicated_sharding)
 
         # Track best model
         if jnp.argmin(jnp.array(test_loss_list)) == len(test_loss_list) - 1:
