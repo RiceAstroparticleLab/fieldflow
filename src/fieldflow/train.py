@@ -491,10 +491,10 @@ def train(
                 }
             )
 
-         # Update unsharded model for best model tracking
+        # Update unsharded model for best model tracking
         model = eqx.filter_shard(model_sharded, replicated_sharding)
 
-        # Evaluate on test set using sharded models and test data
+        # Evaluate on test set using unsharded model and test data
         test_loss = loss_fn(
             model,
             key,
