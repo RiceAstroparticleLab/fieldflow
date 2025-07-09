@@ -4,11 +4,11 @@ This module provides loss functions, training loops, and utilities for training
 CNF models to learn drift fields from position reconstruction data.
 """
 
+import json
 import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
-import json
 
 import equinox as eqx
 import jax
