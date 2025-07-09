@@ -231,10 +231,9 @@ def create_optimizer(config: "Config") -> optax.GradientTransformation:
             [25, 30],
         )
     else:
-        # Use constant learning rate at final scheduled value
-        # for continued training
+        # Use constant learning rate at inputted value
         optax_sched = optax.constant_schedule(
-            config.training.learning_rate * 0.01
+            config.training.learning_rate
         )
 
     # Create base optimizer
