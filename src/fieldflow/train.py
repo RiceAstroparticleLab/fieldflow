@@ -517,7 +517,6 @@ def train(
         test_loss_list.append(test_loss)
         average_train_loss_list.append(jnp.nanmean(jnp.array(train_loss_list[-n_batches:])))
 
-
         with open(str(output_path / "test_losses.json"), "a") as f:
             f.write(json.dumps(float(test_loss_list[-1])) + "\n")
         with open(str(output_path / "train_losses.json"), "a") as f:
