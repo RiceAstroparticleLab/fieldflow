@@ -534,7 +534,7 @@ def train(
     if use_best:
         model = best_model
 
-    return model, average_train_loss_list, test_loss_list, best_epoch
+    return model, train_loss_list, test_loss_list, best_epoch
 
 
 def train_model_from_config(
