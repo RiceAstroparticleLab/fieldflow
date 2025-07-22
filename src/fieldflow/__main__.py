@@ -180,9 +180,9 @@ def main():
         str(output_path / "train_losses.npz"), train_losses=train_losses
     )
     jax.numpy.savez(
-        str(output_path / "test_losses.npz"), test_losses=test_losses
+        str(output_path / "val_losses.npz"), test_losses=test_losses
     )
-    print(f"Training complete. Final test loss: {test_losses[-1]:.6f}")
+    print(f"Training complete. Final validation loss: {test_losses[-1]:.6f}")
 
 
 if __name__ == "__main__":

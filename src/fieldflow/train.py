@@ -492,6 +492,8 @@ def train(
                 scalar = scalar,
             )
             train_loss_list.append(train_loss)
+            with open(str(output_path / "train_losses.json"), "a") as f:
+                f.write(json.dumps(float(train_loss_list[-1])) + "\n")
 
             # Update progress bar
             train_ma = jnp.mean(jnp.array(train_loss_list[-64:]))
@@ -499,7 +501,7 @@ def train(
                 {
                     "loss": f"{train_loss_list[-1]:0.2f}",
                     "loss MA": f"{train_ma:0.3f}",
-                    "test loss": f"{test_loss_list[-1]:0.3f}",
+                    "validation loss": f"{test_loss_list[-1]:0.3f}",
                 }
             )
 
@@ -523,9 +525,9 @@ def train(
         test_loss_list.append(test_loss)
         average_train_loss_list.append(jnp.nanmean(jnp.array(train_loss_list[-n_batches:])))
 
-        with open(str(output_path / "test_losses.json"), "a") as f:
+        with open(str(output_path / "val_losses.json"), "a") as f:
             f.write(json.dumps(float(test_loss_list[-1])) + "\n")
-        with open(str(output_path / "train_losses.json"), "a") as f:
+        with open(str(output_path / "average_train_losses.json"), "a") as f:
             f.write(json.dumps(float(average_train_loss_list[-1])) + "\n")
 
         # Track best model

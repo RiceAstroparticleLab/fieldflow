@@ -116,7 +116,7 @@ class TrainingConfig:
     epochs: int = 100
     batch_size: int = 2048
     enable_scheduler: bool = True
-    epoch_start = 0
+    epoch_start: int = 0
 
     # Data and sampling parameters
     n_samples: int = 16
