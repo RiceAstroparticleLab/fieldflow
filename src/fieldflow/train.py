@@ -286,7 +286,8 @@ def train(
     output_path: str = "",
     loss_fn: Callable = likelihood_loss,
     num_devices: int = 1,
-    scalar: bool = False
+    scalar: bool = False,
+    epoch_start: int = 0,
 ) -> tuple[eqx.Module, list, list]:
     """Train a continuous normalizing flow model.
 
@@ -317,6 +318,7 @@ def train(
         loss_fn: Loss function to use
         num_devices: Number of devices to use for data parallelization
         scalar: If True, omit curl loss component
+        epoch_start: First epoch to begin training at
 
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)
@@ -448,14 +450,18 @@ def train(
 
     best_epoch = 0
     for epoch in loop:
+        epoch_shift = epoch + epoch_start
         key, thiskey = jax.random.split(key, 2)
 
-        # Shuffle data for this epoch
-        indices = jax.random.permutation(thiskey,
-                                         jnp.arange(cond_train.shape[0]))[:n_train]
-        shuffled_conds = cond_train[indices]
-        shuffled_t1s = t1s_train[indices]
-        shuffled_zs = zs_train[indices]
+        # Get data for this epoch (each epoch goes through n_usable_samples)
+        total_patterns = len(cond_train) - (len(cond_train)%n_usable_samples)
+        index_low = epoch_shift*n_usable_samples % total_patterns
+        index_high = (epoch_shift+1)*n_usable_samples % total_patterns
+        if index_high == 0:
+            index_high = total_patterns
+        shuffled_conds = cond_train[index_low:index_high]
+        shuffled_t1s = t1s_train[index_low:index_high]
+        shuffled_zs = zs_train[index_low:index_high]
 
         # Reshape to batch-first format: (n_batches, batch_size, ...)
         epoch_conds = shuffled_conds[:n_usable_samples].reshape(
@@ -464,17 +470,18 @@ def train(
         epoch_t1s = shuffled_t1s[:n_usable_samples].reshape(n_batches, n_batch)
         epoch_zs = shuffled_zs[:n_usable_samples].reshape(n_batches, n_batch)
 
+        # Shard data across devices once per epoch
+        # Each device gets a subset of batches
+        sharded_conds = jax.device_put(epoch_conds, batch_sharding)
+        sharded_t1s = jax.device_put(epoch_t1s, batch_sharding)
+        sharded_zs = jax.device_put(epoch_zs, batch_sharding)
+
         # Training steps for this epoch - simple batch indexing
         for j in range(n_batches):
             key, thiskey = jax.random.split(key, 2)
 
-            # Shard data across devices once per batch
-            sharded_conds = jax.device_put(epoch_conds[j:j+1], batch_sharding)
-            sharded_t1s = jax.device_put(epoch_t1s[j:j+1], batch_sharding)
-            sharded_zs = jax.device_put(epoch_zs[j:j+1], batch_sharding)
-
             # Extract batch - data is already sharded optimally
-            batch_data = (sharded_conds[0], sharded_t1s[0], sharded_zs[0])
+            batch_data = (sharded_conds[j], sharded_t1s[j], sharded_zs[j])
 
             model_sharded, opt_state_sharded, train_loss = make_step(
                 model_sharded,
@@ -591,4 +598,5 @@ def train_model_from_config(
         output_path=output_path,
         num_devices=config.training.num_devices,
         scalar=config.model.scalar,
+        epoch_start=config.training.epoch_start,
     )

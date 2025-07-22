@@ -96,6 +96,7 @@ class TrainingConfig:
         epochs: Number of training epochs.
         batch_size: Batch size for training.
         enable_scheduler: Whether to enable learning rate scheduling.
+        epoch_start: First epoch to begin training at.
         n_samples: Number of samples per instance for likelihood estimation.
         n_train: Size of training set.
         n_test: Size of test/validation set.
@@ -115,6 +116,7 @@ class TrainingConfig:
     epochs: int = 100
     batch_size: int = 2048
     enable_scheduler: bool = True
+    epoch_start = 0
 
     # Data and sampling parameters
     n_samples: int = 16
