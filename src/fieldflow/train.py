@@ -428,12 +428,12 @@ def train(
     train_loss_list = []
     test_loss_list = [
         loss_fn(
-            model,
+            model_sharded,
             key,
-            cond_test,
-            t1s_test,
-            zs_test,
-            posrec_model,
+            cond_test_sharded[0],
+            t1s_test_sharded[0],
+            zs_test_sharded[0],
+            posrec_model_sharded,
             civ_map,
             tpc_r,
             n_samples=n_samples,
@@ -500,14 +500,14 @@ def train(
         # Update unsharded model for best model tracking
         model = eqx.filter_shard(model_sharded, replicated_sharding)
 
-        # Evaluate on test set using unsharded model and UNSHARDED test data
+        # Evaluate on test set using unsharded model and test data
         test_loss = loss_fn(
             model,
             key,
-            cond_test,
-            t1s_test,
-            zs_test,
-            posrec_model,
+            cond_test_sharded[0],
+            t1s_test_sharded[0],
+            zs_test_sharded[0],
+            posrec_model_sharded,
             civ_map,
             tpc_r,
             n_samples=n_samples,
