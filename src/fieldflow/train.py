@@ -370,13 +370,13 @@ def train(
     zs_test = zs[-n_test:]
 
     # Reshape test data to batch-first format: (1, n_test, ...)
-    #cond_test_batched = cond_test.reshape(1, n_test, -1)
-    #t1s_test_batched = t1s_test.reshape(1, n_test)
-    #zs_test_batched = zs_test.reshape(1, n_test)
+    cond_test_batched = cond_test.reshape(1, n_test, -1)
+    t1s_test_batched = t1s_test.reshape(1, n_test)
+    zs_test_batched = zs_test.reshape(1, n_test)
 
-    #cond_test_sharded = jax.device_put(cond_test_batched, batch_sharding)
-    #t1s_test_sharded = jax.device_put(t1s_test_batched, batch_sharding)
-    #zs_test_sharded = jax.device_put(zs_test_batched, batch_sharding)
+    cond_test_sharded = jax.device_put(cond_test_batched, batch_sharding)
+    t1s_test_sharded = jax.device_put(t1s_test_batched, batch_sharding)
+    zs_test_sharded = jax.device_put(zs_test_batched, batch_sharding)
 
     # Shard model, optimizer state, and frozen posrec_model once (replicated)
     model_sharded = eqx.filter_shard(model, replicated_sharding)
