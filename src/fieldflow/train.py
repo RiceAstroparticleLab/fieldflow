@@ -464,18 +464,17 @@ def train(
         epoch_t1s = shuffled_t1s[:n_usable_samples].reshape(n_batches, n_batch)
         epoch_zs = shuffled_zs[:n_usable_samples].reshape(n_batches, n_batch)
 
-        # Shard data across devices once per epoch
-        # Each device gets a subset of batches
-        sharded_conds = jax.device_put(epoch_conds, batch_sharding)
-        sharded_t1s = jax.device_put(epoch_t1s, batch_sharding)
-        sharded_zs = jax.device_put(epoch_zs, batch_sharding)
-
         # Training steps for this epoch - simple batch indexing
         for j in range(n_batches):
             key, thiskey = jax.random.split(key, 2)
 
+            # Shard data across devices once per batch
+            sharded_conds = jax.device_put(epoch_conds[j:j+1], batch_sharding)
+            sharded_t1s = jax.device_put(epoch_t1s[j:j+1], batch_sharding)
+            sharded_zs = jax.device_put(epoch_zs[j:j+1], batch_sharding)
+
             # Extract batch - data is already sharded optimally
-            batch_data = (sharded_conds[j], sharded_t1s[j], sharded_zs[j])
+            batch_data = (sharded_conds[0], sharded_t1s[0], sharded_zs[0])
 
             model_sharded, opt_state_sharded, train_loss = make_step(
                 model_sharded,
