@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING
 
 import jax
 import numpy as np
-from jax.scipy.interpolate import RegularGridInterpolator
+from jax.scipy.interpolate import LinearNDInterpolator
 
 if TYPE_CHECKING:
     from fieldflow.config import Config
 
 
-def load_civ_map(file_path: str | Path) -> RegularGridInterpolator:
+def load_civ_map(file_path: str | Path) -> LinearNDInterpolator:
     """Load CIV map from npz file.
 
     Direct adaptation of load_civ() function from notebook.
@@ -24,21 +24,20 @@ def load_civ_map(file_path: str | Path) -> RegularGridInterpolator:
         file_path: Path to the .npz file containing CIV map data
 
     Returns:
-        RegularGridInterpolator function for CIV map
+        LinearNDInterpolator function for CIV map
     """
     file_path = Path(file_path)
     if not file_path.exists():
         raise FileNotFoundError(f"CIV map file not found: {file_path}")
 
-    with np.load(file_path) as file:
-        r = file["R"]
-        z = file["Z"]
-        vals = file["vals"]
+    with open(file_path, "rb") as f:
+        data = np.load(f)
+        points = data["coordinate_system"] # each point (R,Z)
+        values = data["map"] # single value for each point
 
-    civ_map = RegularGridInterpolator(
-        (r, z),
-        vals,
-        bounds_error=False,
+    civ_map = LinearNDInterpolator(
+        points,
+        values,
         fill_value=0,
     )
 
@@ -84,13 +83,13 @@ def load_data_from_config(
     config: "Config",
     hitpattern_path: str | Path,
     civ_map_path: str | Path,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, RegularGridInterpolator]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, LinearNDInterpolator]:
     """Load all data using configuration parameters.
 
     Args:
         config: Configuration object containing training parameters
         hitpattern_path: Path to hitpattern .npz file
-        civ_map_path: Path to CIV map JSON file
+        civ_map_path: Path to CIV map file
 
     Returns:
         Tuple of (z_sel, z_sel_scaled, cond_sel, civ_map)
@@ -112,13 +111,13 @@ def load_data_from_config(
     return z_sel, z_sel_scaled, cond_sel, civ_map
 
 
-def create_vectorized_civ_map(civ_map: RegularGridInterpolator):
+def create_vectorized_civ_map(civ_map: LinearNDInterpolator):
     """Create vectorized version of CIV map interpolator.
 
     Direct from notebook: vec_civ_map = jax.vmap(civ_map)
 
     Args:
-        civ_map: RegularGridInterpolator for CIV map
+        civ_map: LinearNDInterpolator for CIV map
 
     Returns:
         Vectorized CIV map function
