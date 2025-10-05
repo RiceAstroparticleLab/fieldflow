@@ -98,7 +98,7 @@ def main():
         else Path("data/hitpatterns.npz")
     )
     civ_map_path = (
-        Path(args.civ_map) if args.civ_map else Path("data/civ_map.npz")
+        Path(args.civ_map) if args.civ_map else Path("data/civ_map.json.gz")
     )
     posrec_model_path = (
         Path(args.posrec_model)

@@ -14,7 +14,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import optax
-from jax.scipy.interpolate import LinearNDInterpolator
+from jax.scipy.interpolate import RegularGridInterpolator
 from jaxtyping import Array, PRNGKeyArray, PyTree
 from tqdm import trange
 
@@ -78,7 +78,7 @@ def single_likelihood_loss(
     t1: float,
     z: float,
     posrec_model: eqx.Module,
-    civ_map: LinearNDInterpolator,
+    civ_map: RegularGridInterpolator,
     tpc_r: float,
     radius_buffer: float = 20.0,
     min_p: float = 1e-3,
@@ -167,7 +167,7 @@ def likelihood_loss(
     t1s: Array,
     zs: Array,
     posrec_model: eqx.Module,
-    civ_map: LinearNDInterpolator,
+    civ_map: RegularGridInterpolator,
     tpc_r: float,
     n_samples: int = 4,
     scalar = False,
@@ -273,7 +273,7 @@ def train(
     t1s: Array,
     zs: Array,
     posrec_model: eqx.Module,
-    civ_map: LinearNDInterpolator,
+    civ_map: RegularGridInterpolator,
     n_train: int,
     n_batch: int,
     n_samples: int,
@@ -553,7 +553,7 @@ def train_model_from_config(
     t1s: Array,
     zs: Array,
     posrec_model: eqx.Module,
-    civ_map: LinearNDInterpolator,
+    civ_map: RegularGridInterpolator,
     config: "Config",
     output_path: str = "",
 ) -> tuple[eqx.Module, list, list]:
