@@ -140,7 +140,7 @@ def single_likelihood_loss(
         jnp.where(
             sample_r <= tpc_r,
             jnp.ones_like(sample_r),
-            jnp.exp((tpc_r - sample_r) / 10000),
+            jnp.exp((tpc_r - sample_r) / 100),
         )
     )
 
@@ -222,14 +222,14 @@ def create_optimizer(config: "Config") -> optax.GradientTransformation:
     """
     # Create learning rate schedule
     if config.training.enable_scheduler:
-        # Use standard 3-phase schedule for training from scratch
+
         optax_sched = optax.join_schedules(
             [
                 optax.constant_schedule(config.training.learning_rate),
+                optax.constant_schedule(config.training.learning_rate * 0.5),
                 optax.constant_schedule(config.training.learning_rate * 0.1),
-                optax.constant_schedule(config.training.learning_rate * 0.01),
             ],
-            [25, 30],
+            [20, 70, 150],
         )
     else:
         # Use constant learning rate at inputted value
@@ -450,6 +450,7 @@ def train(
 
     best_epoch = 0
     for epoch in loop:
+
         epoch_shift = epoch + epoch_start
         key, thiskey = jax.random.split(key, 2)
 

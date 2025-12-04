@@ -195,11 +195,12 @@ class DriftFromPotential(eqx.Module):
         )
 
     def __call__(self, t, y, args):
-        def scalar_pot(y_):
-            # use sum for batching
-            return self.model(t, y_, args).sum()
-        gradient = jax.grad(scalar_pot)(y)
+        gradient = jax.grad(lambda y: self.scalar_pot(t, y, args))(y)
         return -gradient
+
+    def scalar_pot(self, t, y, args):
+        return self.model(t, y, args).sum()
+
 
 '''class ContinuousNormalizingFlow(eqx.Module):
     """Continuous normalizing flow using neural ODEs.
@@ -426,7 +427,7 @@ class ContinuousNormalizingFlow(eqx.Module):
             jnp.ndarray: Transformed data points.
         """
         term = diffrax.ODETerm(self.func_extract)
-        solver = diffrax.ReversibleHeun()
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -439,7 +440,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         (y,) = sol.ys
 
         term = diffrax.ODETerm(self.func_drift)
-        solver = diffrax.ReversibleHeun()
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -473,7 +474,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
-        solver = diffrax.ReversibleHeun()
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -482,12 +483,13 @@ class ContinuousNormalizingFlow(eqx.Module):
             self.dt0,
             y,
             (eps, self.func_extract),
-            stepsize_controller=self.stepsizecontroller
+            stepsize_controller=self.stepsizecontroller,
+            max_steps=16384,
         )
         (y,), (delta_log_likelihood,) = sol.ys
 
         y = (y, delta_log_likelihood)
-        solver = diffrax.ReversibleHeun()
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -497,6 +499,7 @@ class ContinuousNormalizingFlow(eqx.Module):
             y,
             (eps, self.func_drift),
             stepsize_controller=self.stepsizecontroller,
+            max_steps =16384,
         )
         (y,), (delta_log_likelihood,) = sol.ys
         return y, delta_log_likelihood
@@ -522,7 +525,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
-        solver = diffrax.ReversibleHeun()
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -536,7 +539,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         (y,), (delta_log_likelihood,) = sol.ys
 
         y = (y, delta_log_likelihood)
-        solver = diffrax.Tsit5()
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
