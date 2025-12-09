@@ -13,7 +13,11 @@ import jax
 
 from fieldflow.config import load_config
 from fieldflow.dataloader import load_data_from_config
-from fieldflow.model import ContinuousNormalizingFlow
+from fieldflow.model import (
+    ContinuousNormalizingFlow,
+    DriftFromPotential,
+    MLPFunc,
+)
 from fieldflow.posrec import posrec_flow
 from fieldflow.train import save_model, train_model_from_config
 
@@ -39,8 +43,12 @@ def create_model_from_config(config, key):
     else:
         step_size_controller = diffrax.ConstantStepSize()
 
+    # Choose drift function based on whether scalar field is used
+    drift_func = DriftFromPotential if config.model.scalar else MLPFunc
+
     # Create and return model
     return ContinuousNormalizingFlow(
+        func=drift_func,
         data_size=config.model.data_size,
         exact_logp=config.model.exact_logp,
         width_size=config.model.width_size,
@@ -49,6 +57,7 @@ def create_model_from_config(config, key):
         stepsizecontroller=step_size_controller,
         t0=config.model.t0,
         dt0=config.model.dt0,
+        extract_t1 = config.model.extract_t1,
     )
 
 
@@ -171,9 +180,9 @@ def main():
         str(output_path / "train_losses.npz"), train_losses=train_losses
     )
     jax.numpy.savez(
-        str(output_path / "test_losses.npz"), test_losses=test_losses
+        str(output_path / "val_losses.npz"), test_losses=test_losses
     )
-    print(f"Training complete. Final test loss: {test_losses[-1]:.6f}")
+    print(f"Training complete. Final validation loss: {test_losses[-1]:.6f}")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ class ModelConfig:
         exact_logp: Whether to use exact log probability calculation.
         width_size: Width of neural network layers.
         depth: Depth of neural network.
+        scalar: Whether to use scalar field instead of vector field.
         use_pid_controller: Whether to use PIDController instead of
             ConstantStepSize.
         rtol: Relative tolerance for PIDController.
@@ -45,6 +46,7 @@ class ModelConfig:
     exact_logp: bool = True
     width_size: int = 192
     depth: int = 10
+    scalar: bool = False
 
     # ODE Solver settings
     use_pid_controller: bool = True
@@ -94,6 +96,7 @@ class TrainingConfig:
         epochs: Number of training epochs.
         batch_size: Batch size for training.
         enable_scheduler: Whether to enable learning rate scheduling.
+        epoch_start: First epoch to begin training at.
         n_samples: Number of samples per instance for likelihood estimation.
         n_train: Size of training set.
         n_test: Size of test/validation set.
@@ -113,6 +116,7 @@ class TrainingConfig:
     epochs: int = 100
     batch_size: int = 2048
     enable_scheduler: bool = True
+    epoch_start: int = 0
 
     # Data and sampling parameters
     n_samples: int = 16

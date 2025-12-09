@@ -123,6 +123,84 @@ class MLPFunc(eqx.Module):
         return y
 
 
+class ScalarMLPFunc(eqx.Module):
+    """Multilayer perceptron that models the scalar potential in
+    a continuous normalizing flow.
+    """
+
+    layers: list[eqx.nn.Linear]
+
+    def __init__(self, *, data_size, width_size, depth, key, **kwargs):
+        """Initialize the MLP scalar potential function.
+
+        Args:
+            data_size (int): Dimensionality of the input data.
+            width_size (int): Hidden layer width. Ignored if depth=0.
+            depth (int): Number of hidden layers. If 0, creates a single linear
+              layer.
+            key (jax.random.key): Random key for parameter initialization.
+        """
+        super().__init__(**kwargs)
+        keys = jax.random.split(key, depth + 1)
+        layers = []
+        # modify final output to be scalar
+        if depth == 0:
+            layers.append(eqx.nn.Linear(data_size + 1, 1, key=keys[0]))
+        else:
+            layers.append(
+                eqx.nn.Linear(data_size + 1, width_size, key=keys[0])
+            )
+            for i in range(depth - 1):
+                layers.append(
+                    eqx.nn.Linear(width_size, width_size, key=keys[i + 1])
+                )
+
+            layers.append(eqx.nn.Linear(width_size, 1, key=keys[-1]))
+        self.layers = layers
+
+    def __call__(self, t, y, args):  # noqa: ARG002
+        """Compute the scalar potential at given time and state.
+
+        Args:
+            t (float): Current time.
+            y (jnp.ndarray): Current state vector.
+
+        Returns:
+            jnp.ndarray: Potential as a vector of shape (batch_size, 1).
+        """
+        # Ensure t is a 1D array and broadcast it to match y's shape
+        t = jnp.broadcast_to(jnp.asarray(t), (*y.shape[:-1], 1))
+        y = jnp.concatenate((y, t), axis=-1)
+
+        for layer in self.layers[:-1]:
+            y = layer(y)
+            y = jax.nn.silu(y)
+        y = self.layers[-1](y)
+        # return scalar potential value
+        return jnp.squeeze(y, axis=-1)
+
+class DriftFromPotential(eqx.Module):
+    model: ScalarMLPFunc
+    """
+    Drift function derived from a scalar potential model.
+    """
+    def __init__(self, *, data_size, width_size, depth, key, **kwargs):
+        super().__init__(**kwargs)
+        # Initialize the scalar potential model
+        self.model = ScalarMLPFunc(
+            data_size=data_size,
+            width_size=width_size,
+            depth=depth,
+            key=key,
+        )
+
+    def __call__(self, t, y, args):
+        gradient = jax.grad(lambda y: self.scalar_pot(t, y, args))(y)
+        return -gradient
+
+    def scalar_pot(self, t, y, args):
+        return self.model(t, y, args).sum()
+
 class ContinuousNormalizingFlow(eqx.Module):
     """Continuous normalizing flow using neural ODEs.
 
@@ -134,6 +212,10 @@ class ContinuousNormalizingFlow(eqx.Module):
         dt0 (float): Initial time step for ODE integration.
         stepsizecontroller (diffrax.AbstractStepSizeController): Controls
           adaptive stepping.
+
+        func_extract (eqx.Module): Neural network
+        modeling the extraction function.
+        extract_t1 (float): final extraction time
     """
 
     func_drift: eqx.Module
@@ -142,6 +224,9 @@ class ContinuousNormalizingFlow(eqx.Module):
     t0: float
     dt0: float
     stepsizecontroller: diffrax.AbstractStepSizeController
+
+    func_extract: eqx.Module
+    extract_t1: float
 
     def __init__(
         self,
@@ -152,9 +237,10 @@ class ContinuousNormalizingFlow(eqx.Module):
         depth,
         key,
         stepsizecontroller=None,
-        func=MLPFunc,
+        func=ScalarMLPFunc, ### DEFAULT, should not be
         t0=0.0,
         dt0=1.0,
+        extract_t1 = 10,
         **kwargs,
     ):
         if stepsizecontroller is None:
@@ -167,11 +253,20 @@ class ContinuousNormalizingFlow(eqx.Module):
             depth=depth,
             key=keys[0],
         )
+        self.func_extract = (
+            func(
+                data_size=data_size,
+                width_size=width_size,
+                depth=depth,
+                key=keys[1],
+            )
+        )
         self.data_size = data_size
         self.exact_logp = exact_logp
         self.t0 = t0
         self.dt0 = dt0
         self.stepsizecontroller = stepsizecontroller
+        self.extract_t1 = extract_t1
 
     def transform(self, *, y, t1):
         """Transform data through the flow without computing log determinants.
@@ -183,8 +278,21 @@ class ContinuousNormalizingFlow(eqx.Module):
         Returns:
             jnp.ndarray: Transformed data points.
         """
+        term = diffrax.ODETerm(self.func_extract)
+        solver = diffrax.Euler()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            self.t0,
+            self.extract_t1,
+            self.dt0,
+            y,
+            stepsize_controller=self.stepsizecontroller,
+        )
+        (y,) = sol.ys
+
         term = diffrax.ODETerm(self.func_drift)
-        solver = diffrax.ReversibleHeun()
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -218,7 +326,22 @@ class ContinuousNormalizingFlow(eqx.Module):
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
-        solver = diffrax.ReversibleHeun()
+        solver = diffrax.Euler()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            self.t0,
+            self.extract_t1,
+            self.dt0,
+            y,
+            (eps, self.func_extract),
+            stepsize_controller=self.stepsizecontroller,
+            max_steps=16384,
+        )
+        (y,), (delta_log_likelihood,) = sol.ys
+
+        y = (y, delta_log_likelihood)
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -228,6 +351,7 @@ class ContinuousNormalizingFlow(eqx.Module):
             y,
             (eps, self.func_drift),
             stepsize_controller=self.stepsizecontroller,
+            max_steps =16384,
         )
         (y,), (delta_log_likelihood,) = sol.ys
         return y, delta_log_likelihood
@@ -253,7 +377,7 @@ class ContinuousNormalizingFlow(eqx.Module):
         delta_log_likelihood = 0.0
 
         y = (y, delta_log_likelihood)
-        solver = diffrax.ReversibleHeun()
+        solver = diffrax.Euler()
         sol = diffrax.diffeqsolve(
             term,
             solver,
@@ -263,6 +387,20 @@ class ContinuousNormalizingFlow(eqx.Module):
             y,
             (eps, self.func_drift),
             stepsize_controller=self.stepsizecontroller,
+        )
+        (y,), (delta_log_likelihood,) = sol.ys
+
+        y = (y, delta_log_likelihood)
+        solver = diffrax.Euler()
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            self.extract_t1,
+            self.t0,
+            -self.dt0,
+            y,
+            (eps, self.func_extract),
+            stepsize_controller=self.stepsizecontroller
         )
         (y,), (delta_log_likelihood,) = sol.ys
 

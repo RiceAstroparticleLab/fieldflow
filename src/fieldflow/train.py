@@ -4,6 +4,7 @@ This module provides loss functions, training loops, and utilities for training
 CNF models to learn drift fields from position reconstruction data.
 """
 
+import json
 import warnings
 from collections.abc import Callable
 from pathlib import Path
@@ -83,6 +84,7 @@ def single_likelihood_loss(
     min_p: float = 1e-3,
     n_samples: int = 4,
     curl_loss_multiplier: float = 1000.0,
+    scalar: bool = False,
 ) -> float:
     """Compute likelihood loss for a single data point.
 
@@ -102,6 +104,8 @@ def single_likelihood_loss(
         min_p: Minimum survival probability (for numerical stability)
         n_samples: Number of samples for Monte Carlo estimation
         curl_loss_multiplier: Weight for curl penalty term
+        scalar: False if using vector method, True if using scalar pot method
+
 
     Returns:
         Negative log-likelihood loss value
@@ -136,7 +140,7 @@ def single_likelihood_loss(
         jnp.where(
             sample_r <= tpc_r,
             jnp.ones_like(sample_r),
-            jnp.exp((tpc_r - sample_r) / 10000),
+            jnp.exp((tpc_r - sample_r) / 100),
         )
     )
 
@@ -145,13 +149,15 @@ def single_likelihood_loss(
         n_samples
     )
 
-    # Add curl penalty
-    curl_penalty = curl_loss_multiplier * curl_loss(
-        keys[1 + n_samples], model, t1, transformed_samples[0]
-    )
+    if scalar:
+        curl_penalty = 0
+    else:
+        # Add curl penalty
+        curl_penalty = curl_loss_multiplier * curl_loss(
+            keys[1 + n_samples], model, t1, transformed_samples[0]
+        )
 
     return likelihood_loss_val + curl_penalty
-
 
 @eqx.filter_jit
 def likelihood_loss(
@@ -164,6 +170,7 @@ def likelihood_loss(
     civ_map: RegularGridInterpolator,
     tpc_r: float,
     n_samples: int = 4,
+    scalar = False,
     **kwargs,
 ) -> float:
     """Compute vectorized likelihood loss over a batch of data.
@@ -178,6 +185,7 @@ def likelihood_loss(
         civ_map: Charge-in-volume survival probability map
         tpc_r: TPC radius for boundary constraints
         n_samples: Number of samples per data point
+        scalar: If True, omit curl loss component
         **kwargs: Additional arguments passed to single_likelihood_loss
 
     Returns:
@@ -185,19 +193,21 @@ def likelihood_loss(
     """
     keys = jax.random.split(key, len(zs))
     vec_loss = eqx.filter_vmap(
-        lambda k, cond, t1, z: single_likelihood_loss(
-            k,
-            model,
-            cond,
-            t1,
-            z,
-            posrec_model,
-            civ_map,
-            tpc_r,
-            n_samples=n_samples,
-            **kwargs,
+            lambda k, cond, t1, z: single_likelihood_loss(
+                k,
+                model,
+                cond,
+                t1,
+                z,
+                posrec_model,
+                civ_map,
+                tpc_r,
+                n_samples=n_samples,
+                scalar = scalar,
+                **kwargs,
+            )
         )
-    )
+
     return jnp.mean(vec_loss(keys, conditions, t1s, zs))
 
 
@@ -212,20 +222,19 @@ def create_optimizer(config: "Config") -> optax.GradientTransformation:
     """
     # Create learning rate schedule
     if config.training.enable_scheduler:
-        # Use standard 3-phase schedule for training from scratch
+
         optax_sched = optax.join_schedules(
             [
                 optax.constant_schedule(config.training.learning_rate),
+                optax.constant_schedule(config.training.learning_rate * 0.5),
                 optax.constant_schedule(config.training.learning_rate * 0.1),
-                optax.constant_schedule(config.training.learning_rate * 0.01),
             ],
-            [25, 30],
+            [20, 70, 150],
         )
     else:
-        # Use constant learning rate at final scheduled value
-        # for continued training
+        # Use constant learning rate at inputted value
         optax_sched = optax.constant_schedule(
-            config.training.learning_rate * 0.01
+            config.training.learning_rate
         )
 
     # Create base optimizer
@@ -277,6 +286,8 @@ def train(
     output_path: str = "",
     loss_fn: Callable = likelihood_loss,
     num_devices: int = 1,
+    scalar: bool = False,
+    epoch_start: int = 0,
 ) -> tuple[eqx.Module, list, list]:
     """Train a continuous normalizing flow model.
 
@@ -306,6 +317,8 @@ def train(
         output_path: Path to directory for saving, default current directory
         loss_fn: Loss function to use
         num_devices: Number of devices to use for data parallelization
+        scalar: If True, omit curl loss component
+        epoch_start: First epoch to begin training at
 
     Returns:
         Tuple of (trained_model, train_loss_history, test_loss_history)
@@ -379,6 +392,7 @@ def train(
         key: PRNGKeyArray,
         batch_data: tuple[Array, Array, Array],
         posrec_model: eqx.Module,
+        scalar: bool
     ) -> tuple[eqx.Module, PyTree, float]:
         """Single training step with pre-sharded batch data."""
         # Data and models are already sharded - extract batch components
@@ -396,6 +410,7 @@ def train(
             tpc_r,
             n_samples=n_samples,
             radius_buffer=radius_buffer,
+            scalar=scalar,
         )
 
         # Update model (gradients automatically aggregated across devices)
@@ -411,6 +426,7 @@ def train(
     # Training loop
     loop = trange(epochs)
     best_model = model
+    average_train_loss_list = []
     train_loss_list = []
     test_loss_list = [
         loss_fn(
@@ -424,17 +440,29 @@ def train(
             tpc_r,
             n_samples=n_samples,
             radius_buffer=radius_buffer,
+            scalar = scalar,
         )
     ]
+
+    output_path = Path(output_path)
+    with open(str(output_path / "test_losses.json"), "a") as f:
+        f.write(json.dumps(float(test_loss_list[-1])) + "\n")
+
     best_epoch = 0
     for epoch in loop:
+
+        epoch_shift = epoch + epoch_start
         key, thiskey = jax.random.split(key, 2)
 
-        # Shuffle data for this epoch
-        indices = jax.random.permutation(thiskey, jnp.arange(n_train))
-        shuffled_conds = cond_train[indices]
-        shuffled_t1s = t1s_train[indices]
-        shuffled_zs = zs_train[indices]
+        # Get data for this epoch (each epoch goes through n_usable_samples)
+        total_patterns = len(cond_train) - (len(cond_train)%n_usable_samples)
+        index_low = epoch_shift*n_usable_samples % total_patterns
+        index_high = (epoch_shift+1)*n_usable_samples % total_patterns
+        if index_high == 0:
+            index_high = total_patterns
+        shuffled_conds = cond_train[index_low:index_high]
+        shuffled_t1s = t1s_train[index_low:index_high]
+        shuffled_zs = zs_train[index_low:index_high]
 
         # Reshape to batch-first format: (n_batches, batch_size, ...)
         epoch_conds = shuffled_conds[:n_usable_samples].reshape(
@@ -462,8 +490,11 @@ def train(
                 thiskey,
                 batch_data,
                 posrec_model_sharded,
+                scalar = scalar,
             )
             train_loss_list.append(train_loss)
+            with open(str(output_path / "train_losses.json"), "a") as f:
+                f.write(json.dumps(float(train_loss_list[-1])) + "\n")
 
             # Update progress bar
             train_ma = jnp.mean(jnp.array(train_loss_list[-64:]))
@@ -471,13 +502,16 @@ def train(
                 {
                     "loss": f"{train_loss_list[-1]:0.2f}",
                     "loss MA": f"{train_ma:0.3f}",
-                    "test loss": f"{test_loss_list[-1]:0.3f}",
+                    "validation loss": f"{test_loss_list[-1]:0.3f}",
                 }
             )
 
-        # Evaluate on test set using sharded models and test data
+        # Update unsharded model for best model tracking
+        model = eqx.filter_shard(model_sharded, replicated_sharding)
+
+        # Evaluate on test set using unsharded model and test data
         test_loss = loss_fn(
-            model_sharded,
+            model,
             key,
             cond_test_sharded[0],
             t1s_test_sharded[0],
@@ -487,11 +521,15 @@ def train(
             tpc_r,
             n_samples=n_samples,
             radius_buffer=radius_buffer,
+            scalar=scalar,
         )
         test_loss_list.append(test_loss)
+        average_train_loss_list.append(jnp.nanmean(jnp.array(train_loss_list[-n_batches:])))
 
-        # Update unsharded model for best model tracking
-        model = eqx.filter_shard(model_sharded, replicated_sharding)
+        with open(str(output_path / "val_losses.json"), "a") as f:
+            f.write(json.dumps(float(test_loss_list[-1])) + "\n")
+        with open(str(output_path / "average_train_losses.json"), "a") as f:
+            f.write(json.dumps(float(average_train_loss_list[-1])) + "\n")
 
         # Track best model
         if jnp.argmin(jnp.array(test_loss_list)) == len(test_loss_list) - 1:
@@ -562,4 +600,6 @@ def train_model_from_config(
         save_file_name=config.training.save_file_name,
         output_path=output_path,
         num_devices=config.training.num_devices,
+        scalar=config.model.scalar,
+        epoch_start=config.training.epoch_start,
     )
