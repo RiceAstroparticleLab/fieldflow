@@ -105,7 +105,7 @@ def single_likelihood_loss(
         t1: ODE integration time (scaled z coordinate).
         z: Physical z coordinate in cm (for CIV lookup).
         posrec_model: Pretrained position reconstruction flow.
-        civ_map: Charge-in-volume survival probability interpolator.
+        civ_map: Charge-insensitive-volume survival probability interpolator.
         tpc_r: TPC radius in cm for boundary constraints.
         radius_buffer: Buffer beyond TPC radius for position sampling.
         min_p: Minimum survival probability (numerical stability).
