@@ -575,7 +575,7 @@ def train_model_from_config(
     civ_map: RegularGridInterpolator,
     config: "Config",
     output_path: str = "",
-) -> tuple[eqx.Module, list, list]:
+) -> tuple[eqx.Module, list, list, int]:
     """Train a CNF model using parameters from a Config object.
 
     Convenience wrapper that extracts training parameters from the config
