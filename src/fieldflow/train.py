@@ -305,7 +305,7 @@ def train(
     num_devices: int = 1,
     scalar: bool = False,
     epoch_start: int = 0,
-) -> tuple[eqx.Module, list, list]:
+) -> tuple[eqx.Module, list, list, int]:
     """Train a CNF model with multi-GPU support.
 
     Implements the main training loop with automatic data sharding across
