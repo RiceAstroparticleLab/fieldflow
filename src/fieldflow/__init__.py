@@ -1,8 +1,6 @@
 """JAX-based normalizing flows for physical field modeling.
 
-This package provides tools for modeling physical fields using continuous
-normalizing flows, with a focus on electric field modeling for particle
-detectors.
+This package provides tools for modeling electric fields in TPCs using physics-informed neural ODEs.
 """
 
 from fieldflow.config import Config, load_config
