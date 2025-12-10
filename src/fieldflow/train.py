@@ -1,7 +1,9 @@
-"""Training infrastructure for FieldFlow continuous normalizing flow models.
+"""Training infrastructure for FieldFlow CNF models.
 
-This module provides loss functions, training loops, and utilities for training
-CNF models to learn drift fields from position reconstruction data.
+This module provides the loss functions and training loop for learning
+electric field distortions in dual-phase TPCs. Training uses position
+samples from a pretrained reconstruction flow weighted by charge-in-volume
+survival probabilities.
 """
 
 import json
@@ -26,17 +28,17 @@ if TYPE_CHECKING:
 
 
 def rolloff_func(x: Array, rolloff: float = 1e-2) -> Array:
-    """Apply rolloff regularization to prevent numerical issues.
+    """Apply soft lower bound to prevent log(0) numerical issues.
 
-    This function ensures that probabilities don't get too close to zero,
-    which can cause numerical instability in log computations.
+    Smoothly regularizes small values using: x + rolloff * exp(-x/rolloff).
+    This approaches x for large values and rolloff for x near 0.
 
     Args:
-        x: Input array to regularize
-        rolloff: Minimum value parameter
+        x: Input array (typically survival probabilities).
+        rolloff: Soft minimum value parameter.
 
     Returns:
-        Regularized array
+        Regularized array with values bounded away from zero.
     """
     return x + rolloff * jnp.exp(-x / rolloff)
 
@@ -48,20 +50,22 @@ def curl_loss(
     x: Array,
     extract_max_z: float = 10.0,  # noqa: ARG001
 ) -> float:
-    """Compute curl penalty for vector field to encourage curl-free flow.
+    """Compute curl penalty for enforcing Maxwell's equations.
 
-    This loss encourages the learned drift field to have minimal curl,
-    which is a physical constraint for certain types of fields.
+    For electrostatic fields, curl(E) = 0. This loss penalizes non-zero curl
+    in the learned drift field when using the vector field approach (MLPFunc).
+    Not needed when using scalar potential (DriftFromPotential) since gradient
+    fields are curl-free by construction.
 
     Args:
-        key: Random key for sampling (unused but kept for interface)
-        model: CNF model with func_drift method
-        z: Current z coordinate (time parameter)
-        x: Spatial coordinates [x, y]
-        extract_max_z: Maximum z value for random sampling (unused)
+        key: Unused (kept for interface compatibility).
+        model: CNF model containing func_drift.
+        z: Current z coordinate (ODE time parameter).
+        x: Spatial coordinates (x, y) at which to evaluate curl.
+        extract_max_z: Unused (kept for interface compatibility).
 
     Returns:
-        Curl penalty loss value
+        Squared curl value (∂v_y/∂x - ∂v_x/∂y)².
     """
     jac_drift = jax.jacfwd(lambda a: model.func_drift(z, a, 0.0))(x)
 
@@ -86,29 +90,31 @@ def single_likelihood_loss(
     curl_loss_multiplier: float = 1000.0,
     scalar: bool = False,
 ) -> float:
-    """Compute likelihood loss for a single data point.
+    """Compute negative log-likelihood loss for a single event.
 
-    This function computes the negative log-likelihood for a single event,
-    incorporating survival probability from CIV maps and curl penalty.
+    The loss combines:
+    1. Monte Carlo estimation of the likelihood using samples from the
+       position reconstruction flow, transformed through the CNF
+    2. CIV survival probability weighting
+    3. Optional curl penalty for vector field approach
 
     Args:
-        key: Random key for sampling
-        model: CNF model to train
-        condition: Hit pattern conditioning information
-        t1: Target time for transformation (scaled z coordinate)
-        z: Physical z coordinate
-        posrec_model: Pretrained position reconstruction model
-        civ_map: Charge-in-volume survival probability map
-        tpc_r: TPC radius for boundary constraints
-        radius_buffer: Buffer for predictions beyond TPC radius
-        min_p: Minimum survival probability (for numerical stability)
-        n_samples: Number of samples for Monte Carlo estimation
-        curl_loss_multiplier: Weight for curl penalty term
-        scalar: False if using vector method, True if using scalar pot method
-
+        key: JAX random key for sampling.
+        model: CNF model being trained.
+        condition: Hit pattern conditioning vector.
+        t1: ODE integration time (scaled z coordinate).
+        z: Physical z coordinate in cm (for CIV lookup).
+        posrec_model: Pretrained position reconstruction flow.
+        civ_map: Charge-in-volume survival probability interpolator.
+        tpc_r: TPC radius in cm for boundary constraints.
+        radius_buffer: Buffer beyond TPC radius for position sampling.
+        min_p: Minimum survival probability (numerical stability).
+        n_samples: Number of Monte Carlo samples.
+        curl_loss_multiplier: Weight for curl penalty term.
+        scalar: If True, skip curl penalty (using scalar potential method).
 
     Returns:
-        Negative log-likelihood loss value
+        Combined negative log-likelihood and curl penalty loss.
     """
     keys = jax.random.split(key, 2 + n_samples)
 
@@ -173,23 +179,26 @@ def likelihood_loss(
     scalar = False,
     **kwargs,
 ) -> float:
-    """Compute vectorized likelihood loss over a batch of data.
+    """Compute batched likelihood loss over multiple events.
+
+    Vectorizes single_likelihood_loss over a batch of events and returns
+    the mean loss.
 
     Args:
-        model: CNF model to train
-        key: Random key for sampling
-        conditions: Batch of hit pattern conditions
-        t1s: Batch of scaled z coordinates
-        zs: Batch of physical z coordinates
-        posrec_model: Pretrained position reconstruction model
-        civ_map: Charge-in-volume survival probability map
-        tpc_r: TPC radius for boundary constraints
-        n_samples: Number of samples per data point
-        scalar: If True, omit curl loss component
-        **kwargs: Additional arguments passed to single_likelihood_loss
+        model: CNF model being trained.
+        key: JAX random key for sampling.
+        conditions: Batch of hit patterns, shape (batch_size, cond_dim).
+        t1s: Batch of ODE times (scaled z), shape (batch_size,).
+        zs: Batch of physical z coordinates, shape (batch_size,).
+        posrec_model: Pretrained position reconstruction flow.
+        civ_map: CIV survival probability interpolator.
+        tpc_r: TPC radius in cm.
+        n_samples: Monte Carlo samples per event.
+        scalar: If True, skip curl penalty.
+        **kwargs: Additional arguments for single_likelihood_loss.
 
     Returns:
-        Mean loss over the batch
+        Mean loss over the batch.
     """
     keys = jax.random.split(key, len(zs))
     vec_loss = eqx.filter_vmap(
@@ -212,13 +221,21 @@ def likelihood_loss(
 
 
 def create_optimizer(config: "Config") -> optax.GradientTransformation:
-    """Create optimizer from configuration.
+    """Create AdamW optimizer with optional learning rate schedule.
+
+    When enable_scheduler is True, uses a piecewise constant schedule:
+    - Epochs 0-19: learning_rate
+    - Epochs 20-69: learning_rate * 0.5
+    - Epochs 70+: learning_rate * 0.1
 
     Args:
-        config: Configuration object containing training parameters
+        config: Configuration with training.learning_rate,
+            training.weight_decay, training.enable_scheduler, and
+            training.multisteps_every_k.
 
     Returns:
-        Configured optax optimizer
+        Configured optax optimizer with gradient accumulation and
+        finite gradient checking.
     """
     # Create learning rate schedule
     if config.training.enable_scheduler:
@@ -254,11 +271,11 @@ def create_optimizer(config: "Config") -> optax.GradientTransformation:
 
 
 def save_model(model, path):
-    """Save model to disk.
+    """Save model weights to disk using equinox serialization.
 
     Args:
-        model: Trained model to save
-        path: Output path for the saved model
+        model: Equinox model to save.
+        path: File path for saved model (typically .eqx extension).
     """
     eqx.tree_serialise_leaves(path, model)
     print(f"Model saved to {path}")
@@ -289,39 +306,40 @@ def train(
     scalar: bool = False,
     epoch_start: int = 0,
 ) -> tuple[eqx.Module, list, list]:
-    """Train a continuous normalizing flow model.
+    """Train a CNF model with multi-GPU support.
 
-    This function implements the main training loop with epoch-level data
-    sharding for optimal multi-GPU performance. Data is resharded once per
-    epoch with batch-first distribution across devices.
+    Implements the main training loop with automatic data sharding across
+    multiple GPUs. Data is resharded once per epoch for optimal performance.
+    Saves periodic checkpoints and tracks train/validation loss history.
 
     Args:
-        key: Random key for training
-        model: CNF model to train
-        optim: Optimizer (from create_optimizer)
-        epochs: Number of training epochs
-        conditions: All hit pattern conditions
-        t1s: All scaled z coordinates
-        zs: All physical z coordinates
-        posrec_model: Pretrained position reconstruction model
-        civ_map: Charge-in-volume survival probability map
-        n_train: Number of training samples
-        n_batch: Batch size
-        n_samples: Samples per likelihood evaluation
-        n_test: Number of test samples
-        tpc_r: TPC radius for boundary constraints
-        radius_buffer: Buffer for predictions beyond TPC radius
-        use_best: Whether to return best model based on validation loss
-        save_iter: Every n number of epochs to save the model
-        save_file_name: Name of the file to save the model, default is "model"
-        output_path: Path to directory for saving, default current directory
-        loss_fn: Loss function to use
-        num_devices: Number of devices to use for data parallelization
-        scalar: If True, omit curl loss component
-        epoch_start: First epoch to begin training at
+        key: JAX random key for training.
+        model: CNF model to train.
+        optim: Optax optimizer (from create_optimizer).
+        epochs: Number of training epochs.
+        conditions: Full dataset of hit patterns.
+        t1s: Full dataset of scaled z coordinates (ODE times).
+        zs: Full dataset of physical z coordinates.
+        posrec_model: Frozen pretrained position reconstruction model.
+        civ_map: CIV survival probability interpolator.
+        n_train: Number of samples for training split.
+        n_batch: Batch size per training step.
+        n_samples: Monte Carlo samples per event in loss computation.
+        n_test: Number of samples for validation split.
+        tpc_r: TPC radius in cm.
+        radius_buffer: Buffer beyond TPC radius for position sampling.
+        use_best: If True, return model with lowest validation loss.
+        save_iter: Save checkpoint every N epochs.
+        save_file_name: Base filename for checkpoints.
+        output_path: Directory for saving checkpoints and loss logs.
+        loss_fn: Loss function (default: likelihood_loss).
+        num_devices: Number of GPUs for data parallelization.
+        scalar: If True, use scalar potential (no curl penalty).
+        epoch_start: Starting epoch number (for resuming training).
 
     Returns:
-        Tuple of (trained_model, train_loss_history, test_loss_history)
+        Tuple of (model, train_losses, val_losses, best_epoch) where
+        model is trained (or best if use_best=True).
     """
     opt_state = optim.init(eqx.filter(model, eqx.is_array))
 
@@ -558,24 +576,24 @@ def train_model_from_config(
     config: "Config",
     output_path: str = "",
 ) -> tuple[eqx.Module, list, list]:
-    """Train model using configuration parameters.
+    """Train a CNF model using parameters from a Config object.
 
-    Convenience function that creates optimizer and calls train() with
-    parameters from the configuration object.
+    Convenience wrapper that extracts training parameters from the config
+    and calls train(). Creates the optimizer internally.
 
     Args:
-        key: Random key for training
-        model: CNF model to train
-        conditions: Hit pattern conditions
-        t1s: Scaled z coordinates
-        zs: Physical z coordinates
-        posrec_model: Pretrained position reconstruction model
-        civ_map: Charge-in-volume survival probability map
-        config: Configuration object
-        output_path: Path to directory for saving, default is current directory
+        key: JAX random key for training.
+        model: CNF model to train.
+        conditions: Full dataset of hit patterns.
+        t1s: Full dataset of scaled z coordinates.
+        zs: Full dataset of physical z coordinates.
+        posrec_model: Pretrained position reconstruction model.
+        civ_map: CIV survival probability interpolator.
+        config: Configuration object with all training parameters.
+        output_path: Directory for saving checkpoints.
 
     Returns:
-        Tuple of (trained_model, train_loss_history, test_loss_history)
+        Tuple of (model, train_losses, val_losses, best_epoch).
     """
     optimizer = create_optimizer(config)
 

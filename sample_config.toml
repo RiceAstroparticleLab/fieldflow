@@ -64,7 +64,7 @@ multisteps_every_k = 4  # Gradient accumulation steps for MultiSteps optimizer
 [experiment]
 # Physical experimental setup parameters
 tpc_height = 148.6515  # Height of the TPC in cm (for filtering z coordinates)
-tpc_r = 66.4  # Radius of the TPC in cm (for boundary constraints)
+tpc_r = 129.96  # Radius of the TPC in cm (for boundary constraints)
 
 [posrec]
 # Position reconstruction flow model parameters

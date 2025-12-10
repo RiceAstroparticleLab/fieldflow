@@ -1,6 +1,17 @@
-"""JAX-based normalizing flows for physical field modeling.
+"""JAX-based continuous normalizing flows for electric field modeling.
 
-This package provides tools for modeling electric fields in TPCs using physics-informed neural ODEs.
+FieldFlow provides tools for modeling electric fields in dual-phase Time
+Projection Chambers (TPCs) using continuous normalizing flows (CNFs). The
+architecture mirrors the physical structure of dual-phase TPCs, with separate
+neural networks for the extraction field (z-independent distortions) and
+drift field (z-dependent distortions).
+
+The library supports two approaches for enforcing Maxwell's equations:
+
+- **Scalar potential method**: Models the field as the negative gradient of a
+  learned scalar potential, which is curl-free by construction.
+- **Vector field with curl loss**: Directly learns the vector field while
+  penalizing non-zero curl during training.
 """
 
 from fieldflow.config import Config, load_config

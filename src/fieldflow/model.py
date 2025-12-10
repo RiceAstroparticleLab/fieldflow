@@ -1,5 +1,15 @@
-"""
-Model definitions for continuous normalizing flow for electric field modeling.
+"""Neural network models for continuous normalizing flows.
+
+This module defines the neural network architectures used to model electric
+field distortions in dual-phase TPCs. The CNF uses separate networks for
+the extraction field (z-independent) and drift field (z-dependent).
+
+Two approaches are provided for enforcing Maxwell's equations:
+
+- **MLPFunc**: Direct vector field parameterization. Requires explicit curl
+  penalty during training to enforce curl-free constraint.
+- **DriftFromPotential**: Scalar potential parameterization where the drift
+  is the negative gradient of the potential. Curl-free by construction.
 """
 
 import diffrax
@@ -70,8 +80,14 @@ def exact_logp_wrapper(t, y, args):
 
 
 class MLPFunc(eqx.Module):
-    """Multilayer perceptron that models the drift function in
-    a continuous normalizing flow.
+    """Multilayer perceptron that directly models the drift vector field.
+
+    This network takes (x, y, t) as input and outputs a 2D drift vector.
+    When used for electric field modeling, training should include a curl
+    penalty to encourage physically valid (curl-free) fields.
+
+    Attributes:
+        layers: List of linear layers forming the MLP.
     """
 
     layers: list[eqx.nn.Linear]
@@ -124,8 +140,14 @@ class MLPFunc(eqx.Module):
 
 
 class ScalarMLPFunc(eqx.Module):
-    """Multilayer perceptron that models the scalar potential in
-    a continuous normalizing flow.
+    """Multilayer perceptron that models a scalar potential field.
+
+    This network takes (x, y, t) as input and outputs a scalar value
+    representing the potential at that point. Used by DriftFromPotential
+    to derive curl-free drift fields via automatic differentiation.
+
+    Attributes:
+        layers: List of linear layers forming the MLP.
     """
 
     layers: list[eqx.nn.Linear]
@@ -180,11 +202,28 @@ class ScalarMLPFunc(eqx.Module):
         return jnp.squeeze(y, axis=-1)
 
 class DriftFromPotential(eqx.Module):
+    """Drift function derived from a scalar potential.
+
+    This class wraps a ScalarMLPFunc and computes the drift as the negative
+    gradient of the learned potential. This guarantees curl-free fields by
+    construction, satisfying Maxwell's equations without explicit penalties.
+
+    Attributes:
+        model: The underlying scalar potential network.
+    """
+
     model: ScalarMLPFunc
-    """
-    Drift function derived from a scalar potential model.
-    """
+
     def __init__(self, *, data_size, width_size, depth, key, **kwargs):
+        """Initialize the drift-from-potential model.
+
+        Args:
+            data_size: Dimensionality of the spatial coordinates.
+            width_size: Width of hidden layers in the potential network.
+            depth: Number of hidden layers in the potential network.
+            key: JAX random key for parameter initialization.
+            **kwargs: Additional arguments passed to parent class.
+        """
         super().__init__(**kwargs)
         # Initialize the scalar potential model
         self.model = ScalarMLPFunc(
@@ -195,27 +234,54 @@ class DriftFromPotential(eqx.Module):
         )
 
     def __call__(self, t, y, args):
+        """Compute drift as negative gradient of the scalar potential.
+
+        Args:
+            t: Current time (z coordinate in physical terms).
+            y: Current spatial position (x, y).
+            args: Additional arguments (unused, for interface compatibility).
+
+        Returns:
+            Drift vector pointing in direction of steepest potential descent.
+        """
         gradient = jax.grad(lambda y: self.scalar_pot(t, y, args))(y)
         return -gradient
 
     def scalar_pot(self, t, y, args):
+        """Evaluate the scalar potential at a point.
+
+        Args:
+            t: Current time.
+            y: Spatial position.
+            args: Additional arguments passed to the model.
+
+        Returns:
+            Scalar potential value (summed over batch if applicable).
+        """
         return self.model(t, y, args).sum()
 
 class ContinuousNormalizingFlow(eqx.Module):
-    """Continuous normalizing flow using neural ODEs.
+    """Continuous normalizing flow for dual-phase TPC field modeling.
+
+    This model uses neural ODEs to learn electric field distortions. The
+    architecture mirrors dual-phase TPC physics with two sequential flows:
+
+    1. **Extraction phase** (func_extract): Models z-independent field
+       distortions that affect the (x, y) distribution uniformly regardless
+       of drift distance.
+    2. **Drift phase** (func_drift): Models z-dependent field distortions
+       where the effect accumulates with drift distance.
 
     Attributes:
-        func_drift (eqx.Module): Neural network modeling the drift function.
-        data_size (int): Dimensionality of the data.
-        exact_logp (bool): Whether to use exact log probability computation.
-        t0 (float): Initial time for ODE integration.
-        dt0 (float): Initial time step for ODE integration.
-        stepsizecontroller (diffrax.AbstractStepSizeController): Controls
-          adaptive stepping.
-
-        func_extract (eqx.Module): Neural network
-        modeling the extraction function.
-        extract_t1 (float): final extraction time
+        func_drift: Neural network for the z-dependent drift field.
+        func_extract: Neural network for the z-independent extraction field.
+        data_size: Dimensionality of the spatial data (typically 2 for x, y).
+        exact_logp: If True, compute exact Jacobian trace. If False, use
+            Hutchinson estimator.
+        t0: Initial time for ODE integration.
+        dt0: Initial step size for ODE solver.
+        extract_t1: Integration end time for extraction phase.
+        stepsizecontroller: Adaptive step size controller for ODE solver.
     """
 
     func_drift: eqx.Module
@@ -243,6 +309,27 @@ class ContinuousNormalizingFlow(eqx.Module):
         extract_t1 = 10,
         **kwargs,
     ):
+        """Initialize the continuous normalizing flow.
+
+        Creates two neural networks with identical architecture: one for the
+        extraction phase and one for the drift phase.
+
+        Args:
+            data_size: Dimensionality of spatial coordinates.
+            exact_logp: Whether to use exact Jacobian trace computation.
+            width_size: Width of hidden layers in drift/extraction networks.
+            depth: Number of hidden layers in drift/extraction networks.
+            key: JAX random key for parameter initialization.
+            stepsizecontroller: ODE step size controller. Defaults to
+                ConstantStepSize if not provided.
+            func: Neural network class for drift/extraction functions.
+                Use MLPFunc for vector field or DriftFromPotential for
+                scalar potential approach.
+            t0: Initial time for ODE integration.
+            dt0: Initial step size for ODE solver.
+            extract_t1: End time for extraction phase integration.
+            **kwargs: Additional arguments passed to parent class.
+        """
         if stepsizecontroller is None:
             stepsizecontroller = diffrax.ConstantStepSize()
         keys = jax.random.split(key, 2)
@@ -269,14 +356,18 @@ class ContinuousNormalizingFlow(eqx.Module):
         self.extract_t1 = extract_t1
 
     def transform(self, *, y, t1):
-        """Transform data through the flow without computing log determinants.
+        """Transform coordinates through extraction and drift phases.
+
+        Applies the full field distortion model without tracking probability
+        changes. First applies the extraction field (z-independent), then
+        the drift field (z-dependent, integrated to time t1).
 
         Args:
-            y (jnp.ndarray): Input data points to transform.
-            t1 (float): Target time for the transformation.
+            y: Input spatial coordinates of shape (data_size,).
+            t1: Target time for drift phase (corresponds to scaled z depth).
 
         Returns:
-            jnp.ndarray: Transformed data points.
+            Transformed coordinates after both flow phases.
         """
         term = diffrax.ODETerm(self.func_extract)
         solver = diffrax.Euler()
@@ -306,17 +397,21 @@ class ContinuousNormalizingFlow(eqx.Module):
         return y
 
     def transform_and_log_det(self, *, y, t1, key):
-        """Transform data and compute log determinant of the transformation.
+        """Transform coordinates and compute the log determinant Jacobian.
+
+        Applies extraction then drift phases while accumulating the log
+        determinant of the transformation Jacobian, needed for density
+        estimation via the change of variables formula.
 
         Args:
-            y (jnp.ndarray): Input data points to transform.
-            t1 (float): Target time for the transformation.
-            key (jax.random.key): Random key for stochastic operations.
+            y: Input spatial coordinates of shape (data_size,).
+            t1: Target time for drift phase (scaled z coordinate).
+            key: JAX random key (used for Hutchinson estimator if exact_logp
+                is False).
 
         Returns:
-            tuple: (transformed_y, log_determinant) where transformed_y is the
-            transformed data and log_determinant is the change in log
-            probability.
+            Tuple of (transformed_y, log_det) where log_det is the accumulated
+            log determinant from both phases.
         """
         if self.exact_logp:
             term = diffrax.ODETerm(exact_logp_wrapper)
@@ -359,15 +454,17 @@ class ContinuousNormalizingFlow(eqx.Module):
     def inverse_and_log_det(self, *, y, t1, key):
         """Apply inverse transformation and compute the log determinant.
 
+        Reverses the flow transformation: first inverts the drift phase
+        (from t1 back to t0), then inverts the extraction phase.
+
         Args:
-            y (jnp.ndarray): Input data points to inverse transform.
-            t1 (float): Starting time for the inverse transformation.
-            key (jax.random.key): Random key for stochastic operations.
+            y: Transformed coordinates to invert.
+            t1: Time to invert from for drift phase (scaled z coordinate).
+            key: JAX random key for Hutchinson estimator if needed.
 
         Returns:
-            tuple: (inverse_y, log_determinant) where inverse_y is the inverse
-            transformed data and log_determinant is the change in log
-            probability.
+            Tuple of (original_y, log_det) where original_y is the recovered
+            input coordinates and log_det is the accumulated log determinant.
         """
         if self.exact_logp:
             term = diffrax.ODETerm(exact_logp_wrapper)

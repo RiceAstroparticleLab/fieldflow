@@ -1,5 +1,12 @@
-"""Pretrained conditional normalizing flow for position reconstruction from
-detector hit patterns, including coordinate transformations.
+"""Position reconstruction flow and coordinate transformations.
+
+This module provides the pretrained position reconstruction normalizing flow
+that maps detector hit patterns to (x, y) position distributions. It also
+includes coordinate transformations between the normalized flow space and
+physical detector coordinates.
+
+The position reconstruction flow serves as a prior for CNF training,
+providing samples of likely (x, y) positions given observed hit patterns.
 """
 
 import copy
@@ -287,15 +294,18 @@ class StandardNormalToUnitBall(AbstractBijection):
 
 
 def get_unconstrain_transform():
-    """Get the unconstrain transform.
+    """Create the transformation from bounded to unbounded coordinates.
 
-    Maps from [-1,1] coordinates to unbounded space via:
-    1. [-1,1] -> [-1+eps, 1-eps] (avoids saturation)
-    2. unbounding transform (arctanh or StandardNormalToUnitBall.inverse)
-    3. final scaling
+    This transformation maps normalized coordinates in [-1, 1] to unbounded
+    space suitable for the normalizing flow's standard normal base
+    distribution. The transformation chain is:
+
+    1. Scale by (1 - eps) to avoid boundary saturation
+    2. Apply inverse of StandardNormalToUnitBall (unit ball -> normal)
+    3. Apply final identity scaling
 
     Returns:
-        Transformation object
+        Chain bijection implementing the unconstrain transformation.
     """
     # Common first step: avoid saturation
     affine_eps = Affine(
@@ -315,6 +325,8 @@ def get_unconstrain_transform():
     return Chain([affine_eps, unbounding_transform, affine_scale])
 
 
+#: Vectorized constraint transformation from unbounded to [-1, 1] space.
+#: Applies the inverse of get_unconstrain_transform() to batches of points.
 constrain_vec = jax.vmap(get_unconstrain_transform().inverse)
 
 
@@ -322,18 +334,22 @@ constrain_vec = jax.vmap(get_unconstrain_transform().inverse)
 def data_inv_transformation(
     data: Array, tpc_r: float, radius_buffer: float
 ) -> Array:
-    """Transform flow coordinates back to physical (x,y) coordinates.
+    """Transform from flow space to physical (x, y) coordinates.
 
-    This function applies the full coordinate transformation chain to convert
-    from normalized flow space back to physical detector coordinates.
+    Converts samples from the normalizing flow's output space back to
+    physical detector coordinates in centimeters.
+
+    The transformation:
+    1. Applies constrain_vec to map from unbounded to [-1, 1]
+    2. Scales by (tpc_r + radius_buffer) to get physical coordinates
 
     Args:
-        data: Array of shape (N, 2) in flow coordinate space
-        tpc_r: TPC radius in cm
-        radius_buffer: Buffer for predictions beyond TPC radius
+        data: Array of shape (N, 2) in flow coordinate space.
+        tpc_r: TPC radius in cm.
+        radius_buffer: Additional buffer beyond TPC radius in cm.
 
     Returns:
-        Array of shape (N, 2) in physical coordinates (cm)
+        Array of shape (N, 2) with physical (x, y) coordinates in cm.
     """
 
 
@@ -355,22 +371,21 @@ def generate_samples_for_cnf(
     tpc_r: float = 129.96,  # Default matches experiment.tpc_r
     radius_buffer: float = 0.0,  # Default matches posrec.radius_buffer
 ) -> Array:
-    """Generate samples from position reconstruction flow for CNF training.
+    """Generate position samples from the reconstruction flow for CNF training.
 
-    This function provides a clean interface for CNF training to sample
-    from the position reconstruction flow and get properly transformed
-    physical coordinates.
+    Samples (x, y) positions from the pretrained position reconstruction flow
+    conditioned on hit patterns, then transforms to physical coordinates.
 
     Args:
-        key: Random key for sampling
-        conditions: Conditioning information (hit patterns)
-        n_samples: Number of samples to generate
-        posrec_model: Pretrained position reconstruction flow model
-        tpc_r: TPC radius in cm (default: 66.4)
-        radius_buffer: Buffer for predictions beyond TPC radius (default: 20.0)
+        key: JAX random key for sampling.
+        conditions: Hit pattern conditioning array of shape (1, cond_dim).
+        n_samples: Number of position samples to generate.
+        posrec_model: Pretrained position reconstruction flow model.
+        tpc_r: TPC radius in cm (default: 129.96).
+        radius_buffer: Buffer beyond TPC radius in cm (default: 0.0).
 
     Returns:
-        Array of shape (n_samples, 2) in physical coordinates
+        Array of shape (n_samples, 2) with sampled (x, y) coordinates in cm.
     """
     # Sample from the position reconstruction flow
     output = posrec_model.sample(key, (n_samples,), condition=conditions)
@@ -382,24 +397,21 @@ def generate_samples_for_cnf(
 
 
 def posrec_flow(pretrained_posrec_flow_path, config: "Config"):
-    """
-    Load a pretrained position reconstruction flow model, which is a coupling
-    flow model with rational quadratic spline bijections. The model uses a
-    standard normal base distribution.
+    """Load a pretrained position reconstruction flow model.
 
-    Parameters
-    ----------
-    pretrained_posrec_flow_path : str or Path
-        Path to the pretrained model weights file. Should be compatible with
-        equinox's tree serialization format.
-    config : Config
-        Configuration object containing position reconstruction flow
-        parameters.
+    Creates a coupling flow architecture matching the pretrained model and
+    loads saved weights. The flow uses rational quadratic spline bijections
+    with a standard normal base distribution.
 
-    Returns
-    -------
-    eqx.Module
-        A pretrained coupling flow model with loaded weights.
+    Args:
+        pretrained_posrec_flow_path: Path to the saved model weights file
+            (equinox serialization format).
+        config: Configuration object with posrec parameters (flow_layers,
+            nn_width, nn_depth, spline_knots, spline_interval, cond_dim,
+            invert_bool).
+
+    Returns:
+        Loaded coupling flow model ready for inference.
     """
     bijection = RationalQuadraticSpline(
         knots=config.posrec.spline_knots,

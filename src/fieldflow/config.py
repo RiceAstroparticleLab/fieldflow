@@ -18,28 +18,31 @@ else:
 
 @dataclass
 class ModelConfig:
-    """Configuration for continuous normalizing flow model architecture and
-    behavior.
+    """Configuration for continuous normalizing flow model architecture.
 
-    This class encapsulates the parameters used to define a Continuous
-    Normalizing Flow model, including neural network architecture, ODE
-    solver settings, and model-specific hyperparameters.
+    This class defines parameters for the CNF model that learns electric field
+    distortions in dual-phase TPCs. The model uses separate neural networks for
+    extraction (z-independent) and drift (z-dependent) field components.
 
     Attributes:
-        data_size: Dimensionality of the input data.
-        exact_logp: Whether to use exact log probability calculation.
-        width_size: Width of neural network layers.
-        depth: Depth of neural network.
-        scalar: Whether to use scalar field instead of vector field.
-        use_pid_controller: Whether to use PIDController instead of
-            ConstantStepSize.
-        rtol: Relative tolerance for PIDController.
-        atol: Absolute tolerance for PIDController.
-        dtmax: Maximum step size for PIDController.
-        dtmin: Minimum step size for PIDController.
-        t0: Starting time for ODE.
-        extract_t1: End time for extract phase.
-        dt0: Initial time step.
+        data_size: Dimensionality of the input data (default 2 for x,y).
+        exact_logp: If True, compute exact log probability using full Jacobian
+            trace. If False, use Hutchinson trace estimator (faster but
+            approximate).
+        width_size: Width of hidden layers in the neural networks.
+        depth: Number of hidden layers in the neural networks.
+        scalar: If True, use scalar potential method (curl-free by
+            construction). If False, use direct vector field with curl
+            penalty loss.
+        use_pid_controller: If True, use adaptive PID step size controller.
+            If False, use constant step size.
+        rtol: Relative tolerance for adaptive ODE solver.
+        atol: Absolute tolerance for adaptive ODE solver.
+        dtmax: Maximum step size for adaptive ODE solver.
+        dtmin: Minimum step size for adaptive ODE solver.
+        t0: Starting time for ODE integration.
+        extract_t1: End time for extraction phase ODE integration.
+        dt0: Initial time step for ODE solver.
     """
 
     data_size: int = 2
@@ -63,7 +66,23 @@ class ModelConfig:
 
 @dataclass
 class PosRecFlowConfig:
-    """Configuration for Position Reconstruction Flow model."""
+    """Configuration for the position reconstruction normalizing flow.
+
+    The position reconstruction flow is a pretrained conditional normalizing
+    flow that maps detector hit patterns to (x, y) position distributions.
+    This flow provides the prior distribution for CNF training.
+
+    Attributes:
+        flow_layers: Number of coupling layers in the normalizing flow.
+        nn_width: Width of hidden layers in coupling layer neural networks.
+        nn_depth: Number of hidden layers in coupling layer neural networks.
+        invert_bool: Whether to invert the flow direction.
+        cond_dim: Dimension of the conditioning vector (hit pattern size).
+        spline_knots: Number of knots for rational quadratic spline bijections.
+        spline_interval: Interval parameter for spline transformations.
+        radius_buffer: Buffer beyond TPC radius for coordinate transformation,
+            allowing predictions slightly outside the physical boundary.
+    """
 
     # Neural network architecture
     flow_layers: int = 5
@@ -86,27 +105,31 @@ class PosRecFlowConfig:
 class TrainingConfig:
     """Configuration for training CNF models.
 
-    This class encapsulates the parameters used during the training process,
-    including optimization settings, data handling, and training strategies.
+    This class defines parameters for the training process including
+    optimization, batching, loss computation, and multi-GPU parallelization.
 
     Attributes:
-        seed: Random seed for training reproducibility.
-        learning_rate: Initial learning rate for the optimizer.
-        weight_decay: L2 regularization parameter.
+        seed: Random seed for reproducibility.
+        learning_rate: Initial learning rate for AdamW optimizer.
+        weight_decay: L2 regularization coefficient.
         epochs: Number of training epochs.
-        batch_size: Batch size for training.
-        enable_scheduler: Whether to enable learning rate scheduling.
-        epoch_start: First epoch to begin training at.
-        n_samples: Number of samples per instance for likelihood estimation.
-        n_train: Size of training set.
-        n_test: Size of test/validation set.
-        use_best: Whether to use the best model based on validation.
-        curl_loss_multiplier: Coefficient for curl loss component.
-        z_scale: Scaling factor for z dimension.
-        multisteps_every_k: Steps for MultiSteps optimizer.
-        num_devices: Number of devices to use for data parallelization.
-        save_iter: Every n number of epochs to save the model
-        save_file_name: Path and file name start (/path/to/model_name)
+        batch_size: Number of samples per training batch.
+        enable_scheduler: If True, use learning rate schedule that reduces
+            LR at epochs 20 and 70. If False, use constant learning rate.
+        epoch_start: Starting epoch number (useful for resuming training).
+        n_samples: Number of Monte Carlo samples per event for likelihood
+            estimation from the position reconstruction flow.
+        n_train: Number of training samples to use from the dataset.
+        n_test: Number of samples for validation/test set.
+        use_best: If True, return the model with lowest validation loss.
+        curl_loss_multiplier: Weight for curl penalty term (only used when
+            scalar=False in ModelConfig).
+        z_scale: Scaling factor to normalize z coordinates.
+        multisteps_every_k: Gradient accumulation steps before optimizer
+            update.
+        num_devices: Number of GPUs for data parallelization.
+        save_iter: Save model checkpoint every N epochs.
+        save_file_name: Base filename for saved model checkpoints.
     """
 
     # Training process parameters
@@ -138,14 +161,16 @@ class TrainingConfig:
 
 @dataclass
 class ExperimentConfig:
-    """Configuration for experimental parameters.
+    """Configuration for the physical TPC geometry.
 
-    This class encapsulates parameters that describe the physical
-    experimental setup and constraints.
+    This class defines physical parameters of the dual-phase Time Projection
+    Chamber that constrain the model.
 
     Attributes:
-        tpc_height: Height of the TPC for filtering z coordinates.
-        tpc_r: Radius of the TPC for boundary constraints.
+        tpc_height: Height of the TPC drift region in cm. Used to filter
+            events by z coordinate (keeping -tpc_height < z < 0).
+        tpc_r: Radius of the cylindrical TPC in cm. Used for boundary
+            constraints in the loss function.
     """
 
     tpc_height: float = 259.92

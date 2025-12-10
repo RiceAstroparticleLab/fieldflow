@@ -1,7 +1,12 @@
-"""Entry point for FieldFlow training.
+"""Command-line interface for FieldFlow training.
 
-This module provides a simple command-line interface for training FieldFlow
-models from configuration, with optional fine-tuning of pre-trained models.
+This module provides the CLI entry point for training CNF models to learn
+electric field distortions in dual-phase TPCs. Supports training from
+scratch or fine-tuning pretrained models.
+
+Usage:
+    python -m fieldflow config.toml
+    python -m fieldflow config.toml --pretrained model.eqx
 """
 
 import argparse
@@ -23,14 +28,18 @@ from fieldflow.train import save_model, train_model_from_config
 
 
 def create_model_from_config(config, key):
-    """Create a CNF model from configuration.
+    """Create a CNF model from configuration parameters.
+
+    Initializes a ContinuousNormalizingFlow with architecture and ODE solver
+    settings from the config. Uses DriftFromPotential (scalar method) or
+    MLPFunc (vector method) based on config.model.scalar.
 
     Args:
-        config: Configuration object containing model parameters
-        key: JAX PRNG key for model initialization
+        config: Config object with model parameters.
+        key: JAX random key for parameter initialization.
 
     Returns:
-        Initialized ContinuousNormalizingFlow model
+        Initialized ContinuousNormalizingFlow model.
     """
     # Create step size controller based on config
     if config.model.use_pid_controller:
