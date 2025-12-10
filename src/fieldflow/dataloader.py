@@ -1,8 +1,8 @@
 """Data loading utilities for FieldFlow.
 
 This module provides functions for loading detector data required for
-CNF training, including hit patterns and charge-insensitive-volume (CIV) survival
-probability maps.
+CNF training, including hit patterns and charge-insensitive-volume (CIV)
+survival probability maps.
 """
 
 from pathlib import Path
