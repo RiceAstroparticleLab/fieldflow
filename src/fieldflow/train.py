@@ -2,8 +2,8 @@
 
 This module provides the loss functions and training loop for learning
 electric field distortions in dual-phase TPCs. Training uses position
-samples from a pretrained reconstruction flow weighted by charge-insensitive-volume
-survival probabilities.
+samples from a pretrained reconstruction flow weighted by
+charge-insensitive-volume survival probabilities.
 """
 
 import json
