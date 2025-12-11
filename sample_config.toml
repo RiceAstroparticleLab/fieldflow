@@ -11,20 +11,21 @@ description = "Sample configuration for FieldFlow training"
 # Model architecture parameters
 data_size = 2  # Dimensionality of the input data (2D for x,y coordinates)
 exact_logp = true  # Use exact log probability computation (more accurate but slower)
-width_size = 48  # Width of neural network hidden layers
-depth = 3  # Number of hidden layers in the neural network
+width_size = 256  # Width of neural network hidden layers
+depth = 16  # Number of hidden layers in the neural network
+scalar = true # Use scalar potential model
 
 # ODE solver settings - these control the accuracy and efficiency of the flow
-use_pid_controller = true  # Use adaptive PIDController (recommended) vs constant step size
+use_pid_controller = false  # Use adaptive PIDController (recommended) vs constant step size
 rtol = 1e-3  # Relative tolerance for PIDController (smaller = more accurate, slower)
 atol = 1e-6  # Absolute tolerance for PIDController (smaller = more accurate, slower)
-dtmax = 5.0  # Maximum step size for PIDController
+dtmax = 2.0  # Maximum step size for PIDController
 dtmin = 0.05  # Minimum step size for PIDController
 
 # Time integration parameters
 t0 = 0.0  # Starting time for ODE integration
 extract_t1 = 10.0  # End time for extract phase
-dt0 = 1.0  # Initial time step size
+dt0 = 0.5  # Initial time step size
 
 [training]
 # Multi-GPU Training Support:
@@ -39,45 +40,45 @@ dt0 = 1.0  # Initial time step size
 
 # Training process parameters
 seed = 42  # Random seed for reproducibility
-learning_rate = 2e-3  # Initial learning rate (will be scheduled during training)
+learning_rate = 1e-5  # Initial learning rate (will be scheduled during training)
 weight_decay = 1e-4  # L2 regularization parameter
-epochs = 100  # Number of training epochs
+epochs = 300  # Number of training epochs
 enable_scheduler = true  # Enable learning rate scheduling for training from scratch
                         # When false, uses constant LR = learning_rate * 0.01
                         # Set to false when loading pretrained models to continue training
 
 # Data and batching parameters
-batch_size = 2048  # Training batch size (adjust based on GPU memory)
+batch_size = 1024  # Training batch size (adjust based on GPU memory)
 num_devices = 1  # Number of GPUs for data parallelization
                  # Examples: 1 (single GPU), 2 (dual GPU), 4 (quad GPU), 8 (octa GPU)
                  # Note: batch_size should be divisible by num_devices for optimal performance
 n_samples = 16  # Number of samples per instance for likelihood estimation
-n_train = 200000  # Size of training set
-n_test = 20000  # Size of test/validation set
+n_train = 65536  # Size of training set
+n_test = 4096  # Size of test/validation set
 
 # Training strategy parameters
 use_best = true  # Use the best model based on validation loss (recommended)
 curl_loss_multiplier = 1000.0  # Weight for curl penalty (encourages curl-free fields)
 z_scale = 5.0  # Scaling factor for z dimension coordinates
-multisteps_every_k = 4  # Gradient accumulation steps for MultiSteps optimizer
+multisteps_every_k = 2  # Gradient accumulation steps for MultiSteps optimizer
 
 [experiment]
 # Physical experimental setup parameters
-tpc_height = 148.6515  # Height of the TPC in cm (for filtering z coordinates)
+tpc_height = 259.92  # Height of the TPC in cm (for filtering z coordinates)
 tpc_r = 129.96  # Radius of the TPC in cm (for boundary constraints)
 
 [posrec]
 # Position reconstruction flow model parameters
 # These should match the pretrained position reconstruction model
-flow_layers = 5  # Number of coupling layers in the flow
+flow_layers = 6  # Number of coupling layers in the flow
 nn_width = 128  # Width of neural networks in coupling layers
-nn_depth = 3  # Depth of neural networks in coupling layers
+nn_depth = 6  # Depth of neural networks in coupling layers
 invert_bool = false  # Whether to invert the flow (should match pretrained model)
-cond_dim = 494  # Conditioning dimension (should match hit pattern size)
+cond_dim = 860  # Conditioning dimension (should match hit pattern size)
 
 # Spline transformation parameters
 spline_knots = 5  # Number of knots for rational quadratic splines
 spline_interval = 5.0  # Interval for spline transformations
 
 # Coordinate transformation parameters
-radius_buffer = 20.0  # Buffer for predictions beyond TPC radius (in cm)
+radius_buffer = 0.0  # Buffer for predictions beyond TPC radius (in cm)
