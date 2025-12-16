@@ -1,5 +1,9 @@
 name: Deploy Documentation
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 on:
   push:
     branches:
@@ -29,7 +33,7 @@ jobs:
         run: zensical build --clean
       
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: site
           
