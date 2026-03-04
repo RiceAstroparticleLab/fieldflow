@@ -1,0 +1,12 @@
+site_name: FieldFlow Documentation
+site_description: JAX-based continuous normalizing flows for electric field modeling
+repo_url: https://github.com/RiceAstroparticleLab/fieldflow
+
+docs_dir: docs  # This tells Zensical to use the 'docs' folder
+
+nav:
+  - Home: index.md
+  - Usage: USAGE.md
+
+theme:
+  name: material
