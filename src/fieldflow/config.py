@@ -102,6 +102,33 @@ class PosRecFlowConfig:
 
 
 @dataclass
+class PosRecMLPConfig:
+    """Configuration for the position reconstruction multilayer perceptron (MLP).
+
+    The position reconstruction MLP is a pretrained MLP that maps detector hit 
+    patterns to (x, y) positions. This MLP provides the centers of Gaussians used
+    to provide prior distributions for CNF training.
+
+    Attributes:
+        nn_width: Width of hidden layers in MLP.
+        nn_depth: Number of hidden layers in MLP.
+        input_dim: Dimension of the input vector (hit pattern size).
+        gaussian_sigma: Standard deviation of each Gaussian prior (position 
+            resolution in cm).
+    """
+    # Neural network architecture
+    nn_width: int = 256
+    nn_depth: int = 12
+
+    # Input (equivalent conditioning dim as flow) and output (coords)
+    input_dim: int = 860 # Should be set as conditions.shape[1]
+    output_dim: int = 2 # Should be set as output coords, e.g. (x, y) is 2
+
+    # Gaussian parameters
+    gaussian_sigma: float = 2.0 # Expected position resolution, in cm
+
+
+@dataclass
 class TrainingConfig:
     """Configuration for training CNF models.
 
@@ -142,6 +169,7 @@ class TrainingConfig:
     epoch_start: int = 0
 
     # Data and sampling parameters
+    use_mlp_prior: bool = False
     n_samples: int = 16
     n_train: int = 65536
     n_test: int = 4096
@@ -196,7 +224,8 @@ class Config:
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
-    posrec: PosRecFlowConfig = field(default_factory=PosRecFlowConfig)
+    posrec_flow: PosRecFlowConfig = field(default_factory=PosRecFlowConfig)
+    posrec_mlp: PosRecMLPConfig = field(default_factory=PosRecMLPConfig)
     experiment_name: str | None = None
     description: str | None = None
 
@@ -217,13 +246,14 @@ class Config:
         model_dict = config_dict.get("model", {})
         training_dict = config_dict.get("training", {})
         experiment_dict = config_dict.get("experiment", {})
-        posrec_dict = config_dict.get("posrec", {})
+        posrec_flow_dict = config_dict.get("posrec_flow", {})
+        posrec_mlp_dict = config_dict.get("posrec_mlp", {})
 
         # Get remaining kwargs excluding nested configs
         remaining_kwargs = {
             k: v
             for k, v in config_dict.items()
-            if k not in ("model", "training", "experiment", "posrec")
+            if k not in ("model", "training", "experiment", "posrec_flow", "posrec_mlp")
         }
 
         # Create the config with nested objects
@@ -231,7 +261,8 @@ class Config:
             model=ModelConfig(**model_dict),
             training=TrainingConfig(**training_dict),
             experiment=ExperimentConfig(**experiment_dict),
-            posrec=PosRecFlowConfig(**posrec_dict),
+            posrec_flow=PosRecFlowConfig(**posrec_flow_dict),
+            posrec_mlp=PosRecMLPConfig(**posrec_mlp_dict),
             **remaining_kwargs,
         )
 

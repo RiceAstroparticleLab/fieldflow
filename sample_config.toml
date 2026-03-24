@@ -52,6 +52,10 @@ batch_size = 1024  # Training batch size (adjust based on GPU memory)
 num_devices = 1  # Number of GPUs for data parallelization
                  # Examples: 1 (single GPU), 2 (dual GPU), 4 (quad GPU), 8 (octa GPU)
                  # Note: batch_size should be divisible by num_devices for optimal performance
+use_mlp_prior = false # Enable using MLP posrec Gaussian prior instead of conditioned flow
+					  # When false, uses conditioned flow position contours to sample
+					  # When true, uses Gaussian priors centered on MLP posrec with 
+					  # user-defined stdev
 n_samples = 16  # Number of samples per instance for likelihood estimation
 n_train = 65536  # Size of training set
 n_test = 4096  # Size of test/validation set
@@ -67,7 +71,7 @@ multisteps_every_k = 2  # Gradient accumulation steps for MultiSteps optimizer
 tpc_height = 259.92  # Height of the TPC in cm (for filtering z coordinates)
 tpc_r = 129.96  # Radius of the TPC in cm (for boundary constraints)
 
-[posrec]
+[posrec_flow]
 # Position reconstruction flow model parameters
 # These should match the pretrained position reconstruction model
 flow_layers = 6  # Number of coupling layers in the flow
@@ -82,3 +86,12 @@ spline_interval = 5.0  # Interval for spline transformations
 
 # Coordinate transformation parameters
 radius_buffer = 0.0  # Buffer for predictions beyond TPC radius (in cm)
+
+[posrec_mlp]
+# Position reconstruction MLP model parameters
+# These should match the pretrained position reconstruction model
+nn_width = 256 # Width of MLP neural network
+nn_depth = 10 # Depth of MLP neural network
+input_dim = 860 # Input dimensions (should match hit pattern size)
+output_dim = 2 # Output dimensions (should be 2 for (x, y) coord)
+gaussian_sigma = 2.0 # Standard deviation of Gaussian prior for CNF training (in cm)

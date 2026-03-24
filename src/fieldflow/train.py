@@ -85,6 +85,8 @@ def single_likelihood_loss(
     civ_map: RegularGridInterpolator,
     tpc_r: float,
     radius_buffer: float = 20.0,
+    use_mlp_prior: bool = False,
+    gaussian_sigma: float = 2.0,
     min_p: float = 1e-3,
     n_samples: int = 4,
     curl_loss_multiplier: float = 1000.0,
@@ -94,7 +96,9 @@ def single_likelihood_loss(
 
     The loss combines:
     1. Monte Carlo estimation of the likelihood using samples from the
-       position reconstruction flow, transformed through the CNF
+       position reconstruction, either:
+            a. flow, transformed through the CNF
+            b. Gaussian centered on MLP predicted (x, y) position
     2. CIV survival probability weighting
     3. Optional curl penalty for vector field approach
 
@@ -108,6 +112,8 @@ def single_likelihood_loss(
         civ_map: Charge-insensitive-volume survival probability interpolator.
         tpc_r: TPC radius in cm for boundary constraints.
         radius_buffer: Buffer beyond TPC radius for position sampling.
+        use_mlp_prior: Enables using MLP Gaussian prior for position sampling.
+        gaussian_sigma: Stdev for MLP Gaussian prior for position sampling.
         min_p: Minimum survival probability (numerical stability).
         n_samples: Number of Monte Carlo samples.
         curl_loss_multiplier: Weight for curl penalty term.
@@ -126,6 +132,8 @@ def single_likelihood_loss(
         posrec_model,
         tpc_r,
         radius_buffer,
+        use_mlp_prior,
+        gaussian_sigma,
     )
 
     # Transform samples through CNF model
@@ -297,6 +305,8 @@ def train(
     n_test: int,
     tpc_r: float,
     radius_buffer: float = 20.0,
+    use_mlp_prior: bool = False,
+    gaussian_sigma: float = 2.0,
     use_best: bool = False,
     save_iter: int = 1,
     save_file_name: str = "model",
@@ -328,6 +338,8 @@ def train(
         n_test: Number of samples for validation split.
         tpc_r: TPC radius in cm.
         radius_buffer: Buffer beyond TPC radius for position sampling.
+        use_mlp_prior: If True, uses MLP posrec Gaussian prior.
+        gaussian_sigma: Stdev of Gaussian prior with MLP posrec center.
         use_best: If True, return model with lowest validation loss.
         save_iter: Save checkpoint every N epochs.
         save_file_name: Base filename for checkpoints.
@@ -429,6 +441,8 @@ def train(
             n_samples=n_samples,
             radius_buffer=radius_buffer,
             scalar=scalar,
+            use_mlp_prior=use_mlp_prior,
+            gaussian_sigma=gaussian_sigma,
         )
 
         # Update model (gradients automatically aggregated across devices)
@@ -458,7 +472,9 @@ def train(
             tpc_r,
             n_samples=n_samples,
             radius_buffer=radius_buffer,
-            scalar = scalar,
+            scalar=scalar,
+            use_mlp_prior=use_mlp_prior,
+            gaussian_sigma=gaussian_sigma,
         )
     ]
 
@@ -540,6 +556,8 @@ def train(
             n_samples=n_samples,
             radius_buffer=radius_buffer,
             scalar=scalar,
+            use_mlp_prior=use_mlp_prior,
+            gaussian_sigma=gaussian_sigma,
         )
         test_loss_list.append(test_loss)
         average_train_loss_list.append(jnp.nanmean(jnp.array(train_loss_list[-n_batches:])))
@@ -612,7 +630,9 @@ def train_model_from_config(
         n_samples=config.training.n_samples,
         n_test=config.training.n_test,
         tpc_r=config.experiment.tpc_r,
-        radius_buffer=config.posrec.radius_buffer,
+        radius_buffer=config.posrec_flow.radius_buffer,
+        use_mlp_prior=config.training.use_mlp_prior,
+        gaussian_sigma=config.posrec_mlp.gaussian_sigma,
         use_best=config.training.use_best,
         save_iter=config.training.save_iter,
         save_file_name=config.training.save_file_name,

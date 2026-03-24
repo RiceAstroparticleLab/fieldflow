@@ -23,7 +23,7 @@ from fieldflow.model import (
     DriftFromPotential,
     MLPFunc,
 )
-from fieldflow.posrec import posrec_flow
+from fieldflow.posrec import posrec_flow, posrec_mlp
 from fieldflow.train import save_model, train_model_from_config
 
 
@@ -139,7 +139,10 @@ def main():
 
     # Load pretrained position reconstruction model
     print(f"Loading position reconstruction model from {posrec_model_path}")
-    posrec_model = posrec_flow(posrec_model_path, config)
+    if config.training.use_mlp_prior:
+        posrec_model = posrec_mlp(posrec_model_path, config)
+    else:
+        posrec_model = posrec_flow(posrec_model_path, config)
 
     # Create model or load pretrained model
     if args.pretrained:

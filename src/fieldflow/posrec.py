@@ -367,33 +367,46 @@ def generate_samples_for_cnf(
     key: PRNGKeyArray,
     conditions: Array,
     n_samples: int,
-    posrec_model: eqx.Module,
+    posrec_model: eqx.Module, # Either MLP or conditional flow
     tpc_r: float = 129.96,  # Default matches experiment.tpc_r
     radius_buffer: float = 0.0,  # Default matches posrec.radius_buffer
+    use_mlp_prior: bool = False,  # Uses Gaussian MLP posrec prior instead of flow
+    gaussian_sigma: float = 2.0,  # Stdev of Gaussian prior centered at MLP posrec (cm)
 ) -> Array:
     """Generate position samples from the reconstruction flow for CNF training.
 
     Samples (x, y) positions from the pretrained position reconstruction flow
-    conditioned on hit patterns, then transforms to physical coordinates.
+    conditioned on hit patterns, then transforms to physical coordinates, or
+    from Gaussian priors with the config stdev centered on the MLP predicted
+    (x, y) positions from the given hit patterns.
 
     Args:
         key: JAX random key for sampling.
         conditions: Hit pattern conditioning array of shape (1, cond_dim).
         n_samples: Number of position samples to generate.
-        posrec_model: Pretrained position reconstruction flow model.
+        posrec_model: Pretrained position reconstruction model.
         tpc_r: TPC radius in cm (default: 129.96).
         radius_buffer: Buffer beyond TPC radius in cm (default: 0.0).
+        use_mlp_prior: Enables Gaussian MLP posrec prior
+        gaussian_sigma: Stdev of Gaussian prior centered at MLP posrec (cm)
 
     Returns:
         Array of shape (n_samples, 2) with sampled (x, y) coordinates in cm.
     """
-    # Sample from the position reconstruction flow
-    output = posrec_model.sample(key, (n_samples,), condition=conditions)
+    if use_mlp_prior:
+        # Fetch outputs from MLP
+        xy_pred = posrec_model(conditions.squeeze(0))
+        # Sample from normal distribution with user-defined stdev
+        return jax.random.normal(key, (n_samples, 2)) * gaussian_sigma + xy_pred
 
-    # Transform back to physical coordinates
-    return data_inv_transformation(
-        jnp.reshape(output, (-1, 2)), tpc_r, radius_buffer
-    )
+    else:
+        # Sample from the position reconstruction flow
+        output = posrec_model.sample(key, (n_samples,), condition=conditions)
+
+        # Transform back to physical coordinates
+        return data_inv_transformation(
+            jnp.reshape(output, (-1, 2)), tpc_r, radius_buffer
+        )
 
 
 def posrec_flow(pretrained_posrec_flow_path, config: "Config"):
@@ -414,8 +427,8 @@ def posrec_flow(pretrained_posrec_flow_path, config: "Config"):
         Loaded coupling flow model ready for inference.
     """
     bijection = RationalQuadraticSpline(
-        knots=config.posrec.spline_knots,
-        interval=config.posrec.spline_interval,
+        knots=config.posrec_flow.spline_knots,
+        interval=config.posrec_flow.spline_interval,
     )
 
     key = jax.random.key(42)
@@ -424,15 +437,71 @@ def posrec_flow(pretrained_posrec_flow_path, config: "Config"):
     posrec_model = coupling_flow(
         flow_key,
         base_dist=StandardNormal((2,)),
-        invert=config.posrec.invert_bool,
-        flow_layers=config.posrec.flow_layers,
-        nn_width=config.posrec.nn_width,
-        nn_depth=config.posrec.nn_depth,
+        invert=config.posrec_flow.invert_bool,
+        flow_layers=config.posrec_flow.flow_layers,
+        nn_width=config.posrec_flow.nn_width,
+        nn_depth=config.posrec_flow.nn_depth,
         nn_activation=jax.nn.leaky_relu,
-        cond_dim=config.posrec.cond_dim,
+        cond_dim=config.posrec_flow.cond_dim,
         transformer=bijection,
     )
 
     return eqx.tree_deserialise_leaves(
         pretrained_posrec_flow_path, posrec_model
     )
+
+
+class PosRecMLP(eqx.Module):
+    """Multilayer perceptron for position reconstruction.
+
+    A simple feedforward neural network that maps detector hit patterns
+    to (x, y) position estimates. Used as an alternative to the
+    normalizing flow for position reconstruction, providing point
+    estimates that serve as centers for Gaussian sampling priors
+    in CNF training.
+
+    Attributes:
+        layers: List of linear layers comprising the network.
+    """
+    layers: list
+
+    def __init__(self, key, input_dim=860, width=256, depth=10, output_dim=2):
+        keys = jax.random.split(key, depth + 1)
+        self.layers = []
+        self.layers.append(eqx.nn.Linear(input_dim, width, key=keys[0]))
+        for i in range(depth - 1):
+            self.layers.append(eqx.nn.Linear(width, width, key=keys[i + 1]))
+        self.layers.append(eqx.nn.Linear(width, output_dim, key=keys[-1]))
+
+    def __call__(self, x):
+        for layer in self.layers[:-1]:
+            x = jax.nn.relu(layer(x))
+        return self.layers[-1](x)
+
+
+def posrec_mlp(pretrained_mlp_path, config: "Config"):
+    """Load a pretrained position reconstruction MLP model.
+
+    Creates an MLP architecture matching the pretrained model and
+    loads saved weights. The MLP maps hit patterns to (x, y) position
+    estimates used as Gaussian prior centers for CNF training.
+
+    Args:
+        pretrained_mlp_path: Path to the saved model weights file
+            (equinox serialization format).
+        config: Configuration object with posrec_mlp parameters
+            (nn_width, nn_depth, input_dim, output_dim).
+
+    Returns:
+        Loaded MLP model ready for inference.
+    """
+
+    key = jax.random.key(42)
+    mlp_model = PosRecMLP(
+        key,
+        input_dim=config.posrec_mlp.input_dim,
+        width=config.posrec_mlp.nn_width,
+        depth=config.posrec_mlp.nn_depth,
+        output_dim=config.posrec_mlp.output_dim,
+    )
+    return eqx.tree_deserialise_leaves(pretrained_mlp_path, mlp_model)

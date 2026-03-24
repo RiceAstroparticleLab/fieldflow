@@ -17,7 +17,7 @@ The library supports two approaches for enforcing Maxwell's equations:
 from fieldflow.config import Config, load_config
 from fieldflow.dataloader import load_civ_map, load_data_from_config
 from fieldflow.model import ContinuousNormalizingFlow, MLPFunc
-from fieldflow.posrec import generate_samples_for_cnf, posrec_flow
+from fieldflow.posrec import generate_samples_for_cnf, posrec_flow, posrec_mlp
 from fieldflow.train import (
     create_optimizer,
     likelihood_loss,
@@ -36,6 +36,7 @@ __all__ = [
     "load_config",
     "load_data_from_config",
     "posrec_flow",
+    "posrec_mlp",
     "train",
     "train_model_from_config",
 ]
