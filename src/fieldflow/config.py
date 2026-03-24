@@ -103,17 +103,18 @@ class PosRecFlowConfig:
 
 @dataclass
 class PosRecMLPConfig:
-    """Configuration for the position reconstruction multilayer perceptron (MLP).
+    """Configuration for the position reconstruction multilayer perceptron
+    (MLP).
 
-    The position reconstruction MLP is a pretrained MLP that maps detector hit 
-    patterns to (x, y) positions. This MLP provides the centers of Gaussians used
-    to provide prior distributions for CNF training.
+    The position reconstruction MLP is a pretrained MLP that maps detector hit
+    patterns to (x, y) positions. This MLP provides the centers of Gaussians
+    used to provide prior distributions for CNF training.
 
     Attributes:
         nn_width: Width of hidden layers in MLP.
         nn_depth: Number of hidden layers in MLP.
         input_dim: Dimension of the input vector (hit pattern size).
-        gaussian_sigma: Standard deviation of each Gaussian prior (position 
+        gaussian_sigma: Standard deviation of each Gaussian prior (position
             resolution in cm).
     """
     # Neural network architecture
@@ -253,7 +254,8 @@ class Config:
         remaining_kwargs = {
             k: v
             for k, v in config_dict.items()
-            if k not in ("model", "training", "experiment", "posrec_flow", "posrec_mlp")
+            if k not in ("model", "training", "experiment", "posrec_flow",
+                         "posrec_mlp")
         }
 
         # Create the config with nested objects

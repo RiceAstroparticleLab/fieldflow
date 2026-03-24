@@ -370,8 +370,9 @@ def generate_samples_for_cnf(
     posrec_model: eqx.Module, # Either MLP or conditional flow
     tpc_r: float = 129.96,  # Default matches experiment.tpc_r
     radius_buffer: float = 0.0,  # Default matches posrec.radius_buffer
-    use_mlp_prior: bool = False,  # Uses Gaussian MLP posrec prior instead of flow
-    gaussian_sigma: float = 2.0,  # Stdev of Gaussian prior centered at MLP posrec (cm)
+    use_mlp_prior: bool = False,  # Use MLP posrec + Gaussian prior, not flow
+    gaussian_sigma: float = 2.0,  # Stdev of Gaussian prior centered at MLP
+                                  # posrec (cm)
 ) -> Array:
     """Generate position samples from the reconstruction flow for CNF training.
 
@@ -397,7 +398,9 @@ def generate_samples_for_cnf(
         # Fetch outputs from MLP
         xy_pred = posrec_model(conditions.squeeze(0))
         # Sample from normal distribution with user-defined stdev
-        return jax.random.normal(key, (n_samples, 2)) * gaussian_sigma + xy_pred
+        return (
+            jax.random.normal(key, (n_samples, 2)) * gaussian_sigma + xy_pred
+        )
 
     else:
         # Sample from the position reconstruction flow
